@@ -89,7 +89,7 @@ class TravelOrchestrator:
         
         state["workflow_status"] = WorkflowStatus.ROUTING
         
-        # For now, we call all main agents (weather, events, maps, budget)
+
         # In a more advanced version, this could be LLM-driven based on user query
         agents_to_call = ["weather", "events", "maps", "budget"]
         
@@ -144,7 +144,7 @@ class TravelOrchestrator:
         )
         
         # Update agent status
-        state = update_agent_status(state, "weather", AgentStatus.PROCESSING)
+        state = update_agent_status(state, "weather", AgentStatus.PROCESSING,request_id=request.request_id)
         
         # Publish to weather request channel
         channel = RedisChannels.WEATHER_REQUEST
@@ -166,7 +166,7 @@ class TravelOrchestrator:
             timeout_ms=settings.timeout_events
         )
         
-        state = update_agent_status(state, "events", AgentStatus.PROCESSING)
+        state = update_agent_status(state, "events", AgentStatus.PROCESSING,request_id=request.request_id)
         
         channel = RedisChannels.EVENTS_REQUEST
         await self.redis_client.publish(channel, request.dict())
@@ -182,7 +182,7 @@ class TravelOrchestrator:
             timeout_ms=settings.timeout_maps
         )
         
-        state = update_agent_status(state, "maps", AgentStatus.PROCESSING)
+        state = update_agent_status(state, "maps", AgentStatus.PROCESSING,request_id=request.request_id)
         
         channel = RedisChannels.MAPS_REQUEST
         await self.redis_client.publish(channel, request.dict())
@@ -200,7 +200,7 @@ class TravelOrchestrator:
             timeout_ms=settings.timeout_budget
         )
         
-        state = update_agent_status(state, "budget", AgentStatus.PROCESSING)
+        state = update_agent_status(state, "budget", AgentStatus.PROCESSING,request_id=request.request_id)
         
         channel = RedisChannels.BUDGET_REQUEST
         await self.redis_client.publish(channel, request.dict())
@@ -208,40 +208,62 @@ class TravelOrchestrator:
         self.logger.info(f"📡 Dispatched budget request to {channel}")
     
     async def _collect_responses_node(self, state: TravelState) -> TravelState:
-        """Collect responses from all agents"""
-        self.logger.info("📥 Collecting responses from agents")
-        
+        """Collect responses from all agents incrementally"""
+        self.logger.info("📥 Collecting responses from agents (incremental)")
+
         session_id = state["session_id"]
         agents = state["agents_to_execute"]
-        
-        # Subscribe to response channels
-        response_channels = {
-            agent: RedisChannels.get_response_channel(agent, session_id)
-            for agent in agents
-        }
-        
-        # Collect responses with timeout
-        responses = await self._wait_for_responses(
-            response_channels,
-            timeout=settings.orchestrator_timeout / 1000
-        )
-        
-        # Process each response
-        for agent_name, response_data in responses.items():
-            if response_data:
-                await self._process_agent_response(state, agent_name, response_data)
-            else:
-                # Timeout occurred
-                state = update_agent_status(state, agent_name, AgentStatus.TIMEOUT)
-                self.logger.warning(f"⏱️ Timeout waiting for {agent_name}")
-        
-        state["messages"].append(f"Collected responses from {len(responses)} agents")
+
+        # Prepare futures and subscriptions for each agent
+        responses = {agent: None for agent in agents}
+        futures = {agent: asyncio.Future() for agent in agents}
+        subscriptions = {}
+
+        async def create_handler(agent_name):
+            async def handler(data):
+                if not futures[agent_name].done():
+                    futures[agent_name].set_result(data)
+            return handler
+
+        # Subscribe to each agent's response channel
+        for agent in agents:
+            channel = RedisChannels.get_response_channel(agent, session_id)
+            subscriptions[agent] = await self.redis_client.subscribe(
+                channel, await create_handler(agent)
+            )
+
+        # Process responses as they come in
+        pending_agents = set(agents)
+        while pending_agents:
+            done, _ = await asyncio.wait(
+                [futures[agent] for agent in pending_agents],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            for future in done:
+                agent_name = next(a for a in pending_agents if futures[a] == future)
+                response_data = future.result() if future.done() and not future.exception() else None
+
+                if response_data:
+                    await self._process_agent_response(state, agent_name, response_data)
+                    responses[agent_name] = response_data
+                else:
+                    state = update_agent_status(state, agent_name, AgentStatus.TIMEOUT)
+                    self.logger.warning(f"⏱️ Timeout waiting for {agent_name}")
+
+                pending_agents.remove(agent_name)
+
+        # Cleanup subscriptions
+        for subscription_id in subscriptions.values():
+            await self.redis_client.unsubscribe(subscription_id)
+
+        state["messages"].append(f"Collected responses from {len(responses)} agents incrementally")
         
         # Update state in Redis
-        await self.redis_client.set_state(state["session_id"], dict(state))
-        
+        await self.redis_client.set_state(session_id, dict(state))
+
         return state
-    
+
     async def _wait_for_responses(
         self,
         channels: Dict[str, str],
@@ -293,26 +315,74 @@ class TravelOrchestrator:
         agent_name: str,
         response_data: Dict[str, Any]
     ):
-        """Process response from an agent"""
+        """Process response from an agent and send streaming updates"""
         
         success = response_data.get("success", False)
         data = response_data.get("data")
         error = response_data.get("error")
+        self.logger.debug(f"Processing {agent_name} response: success={success}, data_keys={data.keys() if data else None}")
         
         if success and data:
-            # Store agent data in state
+            # Store agent data and send streaming update
+            update_payload = {}
+            
             if agent_name == "weather":
                 state["weather_data"] = data.get("weather_forecast", [])
+                state["weather_summary"] = data.get("weather_summary", "")
                 state["weather_complete"] = True
+                update_payload = {
+                    "weather_summary": state["weather_summary"],
+                    "weather_data": state["weather_data"]
+                }
+
             elif agent_name == "events":
                 state["events_data"] = data.get("events", [])
                 state["events_complete"] = True
+                update_payload = {
+                    "events_data": state["events_data"]
+                }
+
             elif agent_name == "maps":
-                state["route_data"] = data.get("route_info")
+                state["route_data"] = {
+                    "primary_route": data.get("primary_route"),
+                    "alternative_routes": data.get("alternative_routes"),
+                    "route_analysis": data.get("route_analysis"),
+                    "recommended_mode": data.get("recommended_mode"),
+                    "comparison": data.get("comparison"),
+                    "travel_options": data.get("travel_options"),
+                    "origin": data.get("origin"),
+                    "destination": data.get("destination")
+                }
                 state["maps_complete"] = True
+                update_payload = {
+                    "route_data": state["route_data"]
+                }
+
             elif agent_name == "budget":
                 state["budget_data"] = data.get("budget_breakdown")
                 state["budget_complete"] = True
+                update_payload = {
+                    "budget_data": state["budget_data"]
+                }
+
+            elif agent_name == "itinerary":
+                state["itinerary_data"] = data.get("itinerary_days", [])
+                state["final_itinerary"] = data.get("itinerary_narrative", "")
+                state["itinerary_complete"] = True
+                update_payload = {
+                    "itinerary_data": state["itinerary_data"],
+                    "final_itinerary": state["final_itinerary"]
+                }
+
+            # Send streaming update
+            if update_payload:
+                await add_streaming_update(
+                    session_id=state["session_id"],
+                    agent_name=agent_name,
+                    data=update_payload,
+                    state=state  # optional, if you want to keep updates in TravelState
+                )
+
             
             # Update status
             state = update_agent_status(state, agent_name, AgentStatus.COMPLETED)
@@ -373,53 +443,72 @@ class TravelOrchestrator:
         """Synthesize final itinerary from all agent data"""
         self.logger.info("🎨 Synthesizing final itinerary")
         
-        # Dispatch request to itinerary agent
-        request = MessageFactory.create_itinerary_request(
-            session_id=state["session_id"],
-            travel_state=dict(state),
-            timeout_ms=settings.timeout_itinerary
-        )
+        session_id = state["session_id"]
+        response_channel = RedisChannels.get_response_channel("itinerary", session_id)
         
-        # Update agent status
-        state = update_agent_status(state, "itinerary", AgentStatus.PROCESSING)
+        # Subscribe to response channel with a queue
+        response_queue = asyncio.Queue()
         
-        # Publish to itinerary request channel
-        channel = RedisChannels.ITINERARY_REQUEST
-        await self.redis_client.publish(channel, request.dict())
+        async def handler(data):
+            await response_queue.put(data)
         
-        # Wait for itinerary response
-        response_channel = RedisChannels.get_response_channel(
-            "itinerary",
-            state["session_id"]
-        )
+        subscription_id = await self.redis_client.subscribe(response_channel, handler)
         
-        response_data = await self._wait_for_single_response(
-            response_channel,
-            timeout=settings.timeout_itinerary / 1000
-        )
+        # Wait for Redis subscription to fully activate (CHANGED: 50ms -> 200ms)
+        await asyncio.sleep(0.2)
         
-        if response_data and response_data.get("success"):
-            data = response_data.get("data", {})
-            state["itinerary_data"] = data.get("itinerary_days", [])
-            state["final_itinerary"] = data.get("final_itinerary_text", "")
-            state["itinerary_complete"] = True
-            state = update_agent_status(state, "itinerary", AgentStatus.COMPLETED)
-            self.logger.info("✅ Itinerary synthesis completed")
-        else:
-            error = response_data.get("error", "Unknown error") if response_data else "Timeout"
-            state = update_agent_status(
-                state, 
-                "itinerary", 
-                AgentStatus.FAILED,
-                error_message=error
+        try:
+            # Create and publish request
+            request = MessageFactory.create_itinerary_request(
+                session_id=session_id,
+                travel_state=dict(state),
+                timeout_ms=settings.timeout_itinerary
             )
-            self.logger.error(f"❌ Itinerary synthesis failed: {error}")
+            
+            state = update_agent_status(state, "itinerary", AgentStatus.PROCESSING, request_id=request.request_id)
+            
+            channel = RedisChannels.ITINERARY_REQUEST
+            await self.redis_client.publish(channel, request.dict())
+            
+            # Wait for response with timeout
+            try:
+                response_data = await asyncio.wait_for(
+                    response_queue.get(),
+                    timeout=settings.timeout_itinerary / 1000
+                )
+            except asyncio.TimeoutError:
+                response_data = None
+            
+            # Process response
+            if response_data and response_data.get("success"):
+                data = response_data.get("data", {})
+                state["itinerary_data"] = data.get("itinerary_days", [])
+                state["final_itinerary"] = data.get("itinerary_narrative", "")
+                state["itinerary_complete"] = True
+                state = update_agent_status(state, "itinerary", AgentStatus.COMPLETED)
+                self.logger.info("✅ Itinerary synthesis completed")
+
+                await add_streaming_update(
+                    session_id=session_id,
+                    agent_name="itinerary",
+                    data={
+                        "itinerary_data": state["itinerary_data"],
+                        "final_itinerary": state["final_itinerary"]
+                    },
+                    state=state
+                )
+            else:
+                error = response_data.get("error", "Unknown error") if response_data else "Timeout"
+                state = update_agent_status(state, "itinerary", AgentStatus.FAILED, error_message=error)
+                self.logger.error(f"❌ Itinerary synthesis failed: {error}")
+            
+        finally:
+            await self.redis_client.unsubscribe(subscription_id)
         
-        # Update state in Redis
         await self.redis_client.set_state(state["session_id"], dict(state))
-        
         return state
-    
+
+
     async def _wait_for_single_response(
         self,
         channel: str,
@@ -494,7 +583,8 @@ class TravelOrchestrator:
         travelers_count: int = 1,
         budget_range: Optional[str] = None,
         user_preferences: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        include_travel_options: bool = False  # fixed typo
     ) -> TravelState:
         """
         Plan a trip using the orchestrated agent workflow
@@ -507,6 +597,7 @@ class TravelOrchestrator:
             budget_range: Budget range (e.g., "$1000-2000")
             user_preferences: User preferences dict
             session_id: Optional session ID for resuming
+            include_travel_options: Whether to fetch flights, trains, buses, and hotels
             
         Returns:
             Final TravelState with all results
@@ -545,12 +636,16 @@ class TravelOrchestrator:
                 from app.core.state import UserPreferences
                 prefs = UserPreferences(**user_preferences)
                 initial_state["user_preferences"] = prefs.dict()
+
+            # Save the include_travel_options flag in state so workflow can access it
+            initial_state["include_travel_options"] = include_travel_options
             
             self.logger.info(
                 f"🎪 Starting travel planning workflow\n"
                 f"   Session: {initial_state['session_id']}\n"
                 f"   Destination: {destination}\n"
-                f"   Dates: {', '.join(travel_dates)}"
+                f"   Dates: {', '.join(travel_dates)}\n"
+                f"   Include Travel Options: {include_travel_options}"
             )
             
             # Run the workflow
@@ -562,7 +657,7 @@ class TravelOrchestrator:
         except Exception as e:
             self.logger.error(f"Workflow failed: {str(e)}", exc_info=True)
             raise
-    
+        
     async def get_session_state(self, session_id: str) -> Optional[TravelState]:
         """Get state for a session"""
         return await self.redis_client.get_state(session_id)
