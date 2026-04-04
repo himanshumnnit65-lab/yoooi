@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.config.settings import settings
 from app.core.state import WeatherInfo, AirPollutionInfo
 
+
 logger = logging.getLogger(__name__)
 
 # ========================= INPUT SCHEMAS ========================= #
@@ -26,7 +27,7 @@ class CoordinatesInput(BaseModel):
 class WeatherDatesInput(BaseModel):
     """Input schema for weather forecast with specific dates."""
     location: str = Field(..., description="City name or location")
-    dates: List[str] = Field(..., description="List of dates in YYYY-MM-DD format")
+    dates: Annotated[List[str], "List of dates in YYYY-MM-DD format, e.g. ['2026-05-01', '2026-05-02']"]
 
 # ========================= HELPER FUNCTIONS ========================= #
 
@@ -306,6 +307,17 @@ async def get_weather_for_specific_dates(location: str, dates: List[str]) -> Dic
     lon = coords_result["lon"]
     
     today = datetime.now().date()
+    # Clean each date string before parsing
+    cleaned_dates = []
+    for d in dates:
+        d = d.strip()
+        if " to " in d:
+            # Handle range strings like "2026-04-05 to 2026-04-13"
+            parts = d.split(" to ")
+            cleaned_dates.extend([p.strip() for p in parts])
+        else:
+            cleaned_dates.append(d)
+    dates = cleaned_dates
     max_date = max(datetime.strptime(d, "%Y-%m-%d").date() for d in dates)
     delta_days = (max_date - today).days
     
