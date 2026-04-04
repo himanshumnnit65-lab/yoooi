@@ -1,260 +1,430 @@
-from typing import Dict, Optional
-import asyncio
-from app.agents.base_agent import BaseAgent
-from app.core.state import TravelState, RouteInfo
+"""
+Maps Agent Implementation with LangChain Tools and Redis Pub/Sub
+
+Follows the same structure as WeatherAgent:
+- Extends BaseAgent
+- Uses LangChain tools for map operations
+- Supports MCP protocol via Redis pub/sub
+- Streaming updates
+"""
+
+from typing import Dict, Any, List, Optional
+import logging
+from datetime import datetime
+
+from app.agents.base_agent import BaseAgent, AgentType, StreamingUpdateType
+from app.tools.maps_tools import MAPS_TOOLS, get_route, get_multiple_routes, get_comprehensive_travel_options
+from app.messaging.redis_client import RedisClient
 from app.services.maps_service import MapsService
+from app.core.state import RouteInfo
 
 
 class MapsAgent(BaseAgent):
-    """Trailblazer - Route planning and navigation agent"""
+    """
+    Maps Agent - Route planning and transportation analysis
     
-    def __init__(self):
+    Uses LangChain tools and Google Gemini for intelligent route analysis
+    """
+    
+    def __init__(
+        self,
+        redis_client: RedisClient,
+        gemini_api_key: str = None,
+        model_name: str = "gemini-2.0-flash-exp"
+    ):
         super().__init__(
             name="Trailblazer",
-            role="Route Planner & Navigator", 
-            expertise="Route optimization, transportation analysis, and travel logistics"
+            role="Route Planner & Navigator",
+            expertise="Route optimization, transportation analysis, and travel logistics",
+            agent_type=AgentType.MAPS,
+            redis_client=redis_client,
+            tools=MAPS_TOOLS,
+            gemini_api_key=gemini_api_key,
+            model_name=model_name
         )
+        
         self.maps_service = MapsService()
     
     def get_system_prompt(self) -> str:
         """Get the system prompt for the maps agent"""
-        return """
-        You are the Trailblazer, a route planning and navigation expert. Your role is to:
-        
-        1. Analyze route options between origin and destination
-        2. Compare different transportation modes (driving, walking, cycling)
-        3. Provide practical travel recommendations based on distance and duration
-        4. Suggest optimal transportation methods considering factors like time, cost, and convenience
-        5. Identify potential travel challenges or considerations
-        
-        Always provide practical, actionable route advice that helps travelers make informed decisions.
-        Be concise but informative. Focus on how route choices will impact the overall travel experience.
-        
-        When given route data, create a brief analysis that includes:
-        - Recommended transportation mode and reasoning
-        - Journey overview with key details
-        - Any notable considerations or tips
-        - Alternative options if relevant
-        """
+        return f"""
+You are {self.name}, a {self.role}. Your role is to:
+
+1. Analyze route options between origin and destination
+2. Compare different transportation modes (driving, walking, cycling)
+3. Provide practical travel recommendations based on distance and duration
+4. Suggest optimal transportation methods considering time, cost, and convenience
+5. Identify potential travel challenges or considerations
+6. Analyze flights, trains, buses, and hotel options when requested
+
+Expertise: {self.expertise}
+
+You have access to maps tools that can:
+- Geocode locations to coordinates
+- Get routes between locations (driving, walking, cycling)
+- Compare multiple transport modes
+- Search flights, trains, and buses
+- Find hotels at destinations
+- Get comprehensive travel options
+
+Always provide practical, actionable route advice that helps travelers make informed decisions.
+Be concise but informative. Focus on how route choices will impact the travel experience.
+
+When analyzing routes, include:
+- Recommended transportation mode and reasoning
+- Journey overview with distance and duration
+- Alternative options if relevant
+- Any notable considerations or tips
+
+Keep responses brief - 2-3 sentences for summaries unless more detail is requested.
+"""
     
-    async def process(self, state: TravelState) -> TravelState:
-        """Process route information for the travel itinerary"""
-        self.log_action("Starting route analysis", f"From {state['origin']} to {state['destination']}")
+    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle maps request
         
-        try:
-            # Get primary route (driving by default) 
-            transport_mode = state.get('preferred_transport', 'driving')
-            
-            primary_route = await self.maps_service.get_route_between_locations(
-                origin=state['origin'],
-                destination=state['destination'],
-                transport_mode=transport_mode
+        Expected request payload:
+        {
+            "origin": "New Delhi, India",
+            "destination": "Agra, India",
+            "transport_mode": "driving",  # optional, default: "driving"
+            "include_alternatives": true,  # optional, default: true
+            "include_travel_options": false,  # optional, default: false
+            "travel_date": "2025-07-01",  # required if include_travel_options=true
+            "checkin_date": "2025-07-01",  # optional
+            "checkout_date": "2025-07-05"  # optional
+        }
+        
+        Returns:
+        {
+            "primary_route": {...},
+            "alternative_routes": {...},
+            "route_analysis": "...",
+            "recommended_mode": "driving",
+            "comparison": {...},
+            "travel_options": {...}  # if requested
+        }
+        """
+        payload = request.get("payload", {})
+        session_id = request.get("session_id")
+        
+        origin = payload.get("origin")
+        destination = payload.get("destination")
+        transport_mode = payload.get("transport_mode", "driving")
+        include_alternatives = payload.get("include_alternatives", True)
+        include_travel_options = payload.get("include_travel_options", False)
+        
+        # Validate required fields
+        if not origin:
+            raise ValueError("Missing required field: origin")
+        if not destination:
+            raise ValueError("Missing required field: destination")
+        
+        self.log_action("Fetching route", f"{origin} → {destination} ({transport_mode})")
+        
+        # Progress update: Fetching primary route
+        await self._send_streaming_update(
+            session_id=session_id,
+            update_type=StreamingUpdateType.PROGRESS,
+            message=f"Calculating route from {origin} to {destination}",
+            progress_percent=20
+        )
+        
+        # Fetch primary route using the tool
+        primary_route_result = await get_route.ainvoke({
+            "origin": origin,
+            "destination": destination,
+            "transport_mode": transport_mode
+        })
+        
+        if "error" in primary_route_result:
+            self.logger.warning(f"Primary route fetch failed: {primary_route_result['error']}")
+            primary_route_result = self._create_fallback_route(origin, destination, transport_mode)
+        
+        result = {
+            "primary_route": primary_route_result,
+            "origin": origin,
+            "destination": destination,
+            "requested_mode": transport_mode
+        }
+        
+        # Get alternative routes if requested
+        alternative_routes = {}
+        if include_alternatives:
+            await self._send_streaming_update(
+                session_id=session_id,
+                update_type=StreamingUpdateType.PROGRESS,
+                message="Analyzing alternative transportation options",
+                progress_percent=40,
+                data={"primary_route_complete": True}
             )
             
-            if primary_route:
-                # Store primary route data in state
-                state['route_data'] = primary_route
-                
-                # Get alternative transportation options (but don't fail if they don't work)
-                alternative_routes = await self._get_alternative_routes(state)
-                
-                # Generate route insights using LLM
-                route_analysis = await self._generate_route_insights(
-                    primary_route, alternative_routes, state
-                )
-                
-                self.add_message_to_state(
-                    state, 
-                    f"Route analysis complete. {route_analysis}"
-                )
-                
-                self.log_action("Route analysis completed successfully")
+            # Fetch alternatives using tool
+            alternatives_result = await get_multiple_routes.ainvoke({
+                "origin": origin,
+                "destination": destination
+            })
+            
+            if "error" not in alternatives_result:
+                alternative_routes = alternatives_result.get("routes", {})
+                # Remove the primary mode from alternatives
+                alternative_routes = {
+                    k: v for k, v in alternative_routes.items()
+                    if k != transport_mode and "error" not in v
+                }
+            
+            result["alternative_routes"] = alternative_routes
+        
+        # Get comprehensive travel options if requested
+        if include_travel_options:
+            await self._send_streaming_update(
+                session_id=session_id,
+                update_type=StreamingUpdateType.PROGRESS,
+                message="Fetching travel options (flights, trains, buses, hotels)",
+                progress_percent=60
+            )
+            
+            travel_date = payload.get("travel_date")
+            checkin = payload.get("checkin_date")
+            checkout = payload.get("checkout_date")
+            
+            if not travel_date:
+                self.log_error("Travel options requested but no travel_date provided", "Skipping")
             else:
-                # Create fallback route information
-                fallback_route = self._create_fallback_route_info(state)
-                state['route_data'] = fallback_route
+                travel_options_result = await get_comprehensive_travel_options.ainvoke({
+                    "origin": origin,
+                    "destination": destination,
+                    "date": travel_date,
+                    "checkin": checkin,
+                    "checkout": checkout
+                })
                 
-                self.add_message_to_state(
-                    state,
-                    f"Basic route information available for {state['origin']} to {state['destination']}"
-                )
-                
-                self.log_action("Used fallback route information")
-                
-        except Exception as e:
-            error_msg = f"Failed to get route information: {str(e)}"
-            self.add_error_to_state(state, error_msg)
-            
-            # Even with errors, try to provide basic route info
-            try:
-                fallback_route = self._create_fallback_route_info(state)
-                state['route_data'] = fallback_route
-            except:
-                pass  # If even fallback fails, continue without route data
-                
-        finally:
-            state['maps_complete'] = True
-            
-        return state
-    
-    def _create_fallback_route_info(self, state: TravelState) -> RouteInfo:
-        """Create basic route information when API calls fail"""
-        return RouteInfo(
-            distance="Distance calculation unavailable",
-            duration="Duration estimation unavailable",
-            steps=[f"Travel from {state['origin']} to {state['destination']}"],
-            traffic_info=None,
-            transport_mode=state.get('preferred_transport', 'driving')
+                result["travel_options"] = travel_options_result
+        
+        # Progress update: Generating analysis
+        await self._send_streaming_update(
+            session_id=session_id,
+            update_type=StreamingUpdateType.PROGRESS,
+            message="Generating route recommendations",
+            progress_percent=80
         )
-    
-    async def _get_alternative_routes(self, state: TravelState) -> Dict[str, Optional[RouteInfo]]:
-        """Get alternative transportation routes"""
-        self.log_action("Fetching alternative transportation options")
         
-        try:
-            # Get routes for walking and cycling as alternatives
-            tasks = [
-                self.maps_service.get_route_between_locations(
-                    state['origin'], state['destination'], "walking"
-                ),
-                self.maps_service.get_route_between_locations(
-                    state['origin'], state['destination'], "cycling"
-                )
-            ]
-            
-            walking_route, cycling_route = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            alternatives = {}
-            
-            if not isinstance(walking_route, Exception) and walking_route:
-                alternatives["walking"] = walking_route
-            
-            if not isinstance(cycling_route, Exception) and cycling_route:
-                alternatives["cycling"] = cycling_route
-            
-            return alternatives
-            
-        except Exception as e:
-            self.log_error("Failed to get alternative routes", str(e))
-            return {}
+        # Generate intelligent route analysis using LLM
+        route_analysis = await self._generate_route_analysis(
+            primary_route=primary_route_result,
+            alternative_routes=alternative_routes,
+            origin=origin,
+            destination=destination,
+            session_id=session_id
+        )
+        
+        result["route_analysis"] = route_analysis
+        result["recommended_mode"] = self._determine_recommended_mode(
+            primary_route_result, alternative_routes
+        )
+        result["comparison"] = self._create_route_comparison(
+            primary_route_result, alternative_routes
+        )
+        
+        # Progress update: Finalizing
+        await self._send_streaming_update(
+            session_id=session_id,
+            update_type=StreamingUpdateType.PROGRESS,
+            message="Finalizing route report",
+            progress_percent=90
+        )
+        
+        self.log_action(
+            "Route analysis complete",
+            f"Primary: {transport_mode}, Alternatives: {len(alternative_routes)}"
+        )
+        
+        return result
     
-    async def _generate_route_insights(
-        self, 
-        primary_route: RouteInfo,
-        alternative_routes: Dict[str, Optional[RouteInfo]], 
-        state: TravelState
+    async def _generate_route_analysis(
+        self,
+        primary_route: Dict[str, Any],
+        alternative_routes: Dict[str, Dict[str, Any]],
+        origin: str,
+        destination: str,
+        session_id: str
     ) -> str:
-        """Generate route insights using the LLM"""
+        """Generate intelligent route analysis using LLM"""
         
-        # Format route data for the LLM
-        route_summary = self._format_routes_for_llm(primary_route, alternative_routes)
-        location_context = self.format_location_context(state)
+        # Format route data for LLM
+        route_text = self._format_routes_for_llm(primary_route, alternative_routes)
         
         user_input = f"""
-        {location_context}
-        
-        Route Analysis:
-        {route_summary}
-        
-        Please provide a concise route recommendation and travel analysis for this journey.
-        Consider factors like convenience, time efficiency, and practical considerations.
-        """
+Origin: {origin}
+Destination: {destination}
+
+Route Information:
+{route_text}
+
+Please provide a concise route analysis including:
+1. Recommended transportation mode and why
+2. Journey overview (distance and duration)
+3. Key considerations for this route
+4. Alternative options if relevant
+
+Keep it brief and practical - 2-3 sentences maximum.
+"""
         
         try:
-            insights = await self.invoke_llm(self.get_system_prompt(), user_input)
-            return insights
+            analysis = await self.invoke_llm(
+                system_prompt=self.get_system_prompt(),
+                user_input=user_input,
+                session_id=session_id,
+                stream_progress=False  # Already sent progress updates
+            )
+            return analysis
         except Exception as e:
-            self.log_error("Failed to generate route insights", str(e))
-            return f"Primary route: {primary_route.distance} in {primary_route.duration} by {primary_route.transport_mode}"
+            self.log_error("Failed to generate route analysis", str(e))
+            return self._get_fallback_summary(primary_route)
     
     def _format_routes_for_llm(
-        self, 
-        primary_route: RouteInfo, 
-        alternative_routes: Dict[str, Optional[RouteInfo]]
+        self,
+        primary_route: Dict[str, Any],
+        alternative_routes: Dict[str, Dict[str, Any]]
     ) -> str:
         """Format route data for LLM consumption"""
+        formatted_lines = []
         
-        formatted_data = [f"""
-        PRIMARY ROUTE (Driving):
-        Distance: {primary_route.distance}
-        Duration: {primary_route.duration}
-        Transport: {primary_route.transport_mode}
-        Key Steps: {'; '.join(primary_route.steps[:3])}
-        """]
+        # Primary route
+        mode = primary_route.get("transport_mode", "driving")
+        distance = primary_route.get("distance", "N/A")
+        duration = primary_route.get("duration", "N/A")
         
+        formatted_lines.append(f"PRIMARY ROUTE ({mode.upper()}):")
+        formatted_lines.append(f"  Distance: {distance}")
+        formatted_lines.append(f"  Duration: {duration}")
+        formatted_lines.append("")
+        
+        # Alternative routes
+        if alternative_routes:
+            formatted_lines.append("ALTERNATIVES:")
+            for alt_mode, alt_route in alternative_routes.items():
+                alt_distance = alt_route.get("distance", "N/A")
+                alt_duration = alt_route.get("duration", "N/A")
+                formatted_lines.append(f"  {alt_mode.upper()}:")
+                formatted_lines.append(f"    Distance: {alt_distance}")
+                formatted_lines.append(f"    Duration: {alt_duration}")
+        
+        return "\n".join(formatted_lines)
+    
+    def _create_fallback_route(
+        self,
+        origin: str,
+        destination: str,
+        transport_mode: str
+    ) -> Dict[str, Any]:
+        """Create fallback route when API fails"""
+        return {
+            "origin": origin,
+            "destination": destination,
+            "distance": "Distance unavailable",
+            "duration": "Duration unavailable",
+            "steps": [f"Travel from {origin} to {destination}"],
+            "transport_mode": transport_mode,
+            "fallback": True
+        }
+    
+    def _get_fallback_summary(self, primary_route: Dict[str, Any]) -> str:
+        """Generate basic fallback summary if LLM fails"""
+        mode = primary_route.get("transport_mode", "driving")
+        distance = primary_route.get("distance", "N/A")
+        duration = primary_route.get("duration", "N/A")
+        
+        return (
+            f"Route calculated: {distance} journey taking approximately {duration} "
+            f"by {mode}. Please check detailed route information for turn-by-turn directions."
+        )
+    
+    def _determine_recommended_mode(
+        self,
+        primary_route: Dict[str, Any],
+        alternative_routes: Dict[str, Dict[str, Any]]
+    ) -> str:
+        """Determine the recommended transportation mode"""
+        if primary_route and "error" not in primary_route:
+            return primary_route.get("transport_mode", "driving")
+        
+        # Fall back to first available alternative
         for mode, route in alternative_routes.items():
-            if route:
-                formatted_data.append(f"""
-        ALTERNATIVE ({mode.upper()}):
-        Distance: {route.distance}
-        Duration: {route.duration}
-        Transport: {route.transport_mode}
-                """)
+            if route and "error" not in route:
+                return mode
         
-        return "\n".join(formatted_data)
+        return "driving"
     
-    def should_process(self, state: TravelState) -> bool:
-        """Check if maps processing is needed"""
-        return not state.get('maps_complete', False)
-    
-    async def get_quick_route_info(self, origin: str, destination: str) -> Optional[str]:
-        """Get quick route information for API responses"""
-        try:
-            route = await self.maps_service.get_route_between_locations(
-                origin, destination, "driving"
-            )
-            
-            if route:
-                return f"{route.distance} journey taking approximately {route.duration} by car"
-            else:
-                return "Route information unavailable"
-                
-        except Exception as e:
-            self.log_error("Failed to get quick route info", str(e))
-            return "Route calculation failed"
-    
-    def format_route_summary(self, route: RouteInfo) -> str:
-        """Format route information for display"""
-        if not route:
-            return "No route information available"
-        
-        summary_parts = [
-            f"Distance: {route.distance}",
-            f"Duration: {route.duration}",
-            f"Mode: {route.transport_mode.title()}"
-        ]
-        
-        if route.traffic_info:
-            summary_parts.append(f"Traffic: {route.traffic_info}")
-        
-        return " | ".join(summary_parts)
-    
-    async def compare_transport_modes(
-        self, 
-        origin: str, 
-        destination: str
+    def _create_route_comparison(
+        self,
+        primary_route: Dict[str, Any],
+        alternative_routes: Dict[str, Dict[str, Any]]
     ) -> Dict[str, Dict[str, str]]:
-        """Compare different transportation modes for a journey"""
-        try:
-            routes = await self.maps_service.get_multiple_route_options(origin, destination)
-            
-            comparison = {}
-            for mode, route in routes.items():
-                if route:
-                    comparison[mode] = {
-                        "distance": route.distance,
-                        "duration": route.duration,
-                        "summary": self.format_route_summary(route)
-                    }
-                else:
-                    comparison[mode] = {
-                        "distance": "N/A",
-                        "duration": "N/A", 
-                        "summary": "Route unavailable"
-                    }
-            
-            return comparison
-            
-        except Exception as e:
-            self.log_error("Failed to compare transport modes", str(e))
-            return {}
+        """Create a comparison summary of all routes"""
+        comparison = {}
+        
+        # Add primary route
+        if primary_route and "error" not in primary_route:
+            mode = primary_route.get("transport_mode", "driving")
+            comparison[mode] = {
+                "distance": primary_route.get("distance", "N/A"),
+                "duration": primary_route.get("duration", "N/A"),
+                "mode": mode
+            }
+        
+        # Add alternatives
+        for mode, route in alternative_routes.items():
+            if route and "error" not in route:
+                comparison[mode] = {
+                    "distance": route.get("distance", "N/A"),
+                    "duration": route.get("duration", "N/A"),
+                    "mode": mode
+                }
+        
+        return comparison
+
+
+# ==================== STANDALONE RUNNER ====================
+
+async def run_maps_agent_standalone():
+    """Run the maps agent as a standalone service"""
+    from app.messaging.redis_client import get_redis_client, RedisChannels
+    from app.config.settings import settings
+    
+    # Get Redis client
+    redis_client = get_redis_client()
+    await redis_client.connect()
+    
+    # Create maps agent
+    maps_agent = MapsAgent(
+        redis_client=redis_client,
+        gemini_api_key=settings.google_api_key,
+        model_name=settings.model_name
+    )
+    
+    # Start the agent
+    await maps_agent.start()
+    
+    print(f"✅ Maps Agent is running!")
+    print(f"   Agent: {maps_agent.name}")
+    print(f"   Type: {maps_agent.agent_type.value}")
+    print(f"   Listening on: {RedisChannels.get_request_channel('maps')}")
+    print(f"\nPress Ctrl+C to stop...")
+    
+    try:
+        # Keep running
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        print("\n\n🛑 Shutting down Maps Agent...")
+        await maps_agent.stop()
+        await redis_client.disconnect()
+        print("✅ Maps Agent stopped")
+
+
+if __name__ == "__main__":
+    import asyncio
+    from app.messaging.redis_client import RedisChannels
+    
+    asyncio.run(run_maps_agent_standalone())
