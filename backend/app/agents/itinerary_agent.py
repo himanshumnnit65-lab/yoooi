@@ -157,11 +157,33 @@ Create detailed, personalized travel itineraries with local recommendations.
 
         # ── User preferences ──────────────────────────────────────────────────
         prefs_str = None
-        if user_preferences:
+        preference_weights = payload.get("preference_weights")
+        if preference_weights and isinstance(preference_weights, dict):
+            # Convert weighted preferences into a structured LLM instruction
+            label_map = {
+                "culture": "🏛️ Culture & History",
+                "food": "🍜 Food & Dining",
+                "adventure": "🏔️ Adventure & Outdoors",
+                "shopping": "🛍️ Shopping & Markets",
+                "nature": "🌿 Nature & Relaxation",
+                "nightlife": "🌙 Nightlife & Entertainment",
+            }
+            sorted_prefs = sorted(preference_weights.items(), key=lambda x: x[1], reverse=True)
+            lines = ["User's weighted trip preferences (scale 1-5):"]
+            for category, weight in sorted_prefs:
+                label = label_map.get(category, category.title())
+                bar = "●" * weight + "○" * (5 - weight)
+                priority = "HIGH PRIORITY" if weight >= 4 else "MODERATE" if weight >= 3 else "LOW PRIORITY"
+                lines.append(f"  {label}: {bar} ({weight}/5) — {priority}")
+            lines.append("")
+            lines.append("IMPORTANT: Heavily favor activities matching HIGH PRIORITY categories.")
+            lines.append("Minimize or skip activities from LOW PRIORITY categories.")
+            prefs_str = "\n".join(lines)
+        elif user_preferences:
             if isinstance(user_preferences, dict):
                 interests = user_preferences.get("interests", [])
                 pace = user_preferences.get("pace", "moderate")
-                prefs_str = f"Interests: {', '.join(interests)}. Pace: {pace}."
+                prefs_str = f"Interests: {', '.join(interests) if isinstance(interests, list) else interests}. Pace: {pace}."
             elif isinstance(user_preferences, str):
                 prefs_str = user_preferences
 

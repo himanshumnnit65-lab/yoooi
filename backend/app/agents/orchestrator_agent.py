@@ -1021,6 +1021,7 @@ Query Type: <query_type>
                 "route_data": state.get("maps_data"),  # Alias for compatibility
                 "budget_data": state.get("budget_data"),
                 "user_preferences": state.get("user_preferences"),
+                "preference_weights": (state.get("user_preferences") or {}).get("preference_weights"),
                 # NEW: Pass context for updates
                 "is_update": is_update,
                 "previous_itinerary": state.get("itinerary_data") if is_update else None,
@@ -1158,7 +1159,8 @@ Query Type: <query_type>
     async def process_query(
         self, 
         user_query: str, 
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        preference_weights: Optional[Dict[str, int]] = None
     ) -> Dict[str, Any]:
         """
         Process a user travel query with memory support
@@ -1193,7 +1195,7 @@ Query Type: <query_type>
             "query_type": "multi_aspect",
             "update_type": None,
             "budget_range": None,
-            "user_preferences": None,
+            "user_preferences": {"preference_weights": preference_weights} if preference_weights else None,
             "needs_itinerary": False,
             "agents_to_execute": [],
             "agent_statuses": {},

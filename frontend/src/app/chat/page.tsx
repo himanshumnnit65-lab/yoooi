@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
+import PreferencePoll from "@/components/PreferencePoll";
 import {
   MapPin,
   Calendar,
@@ -611,6 +612,8 @@ const TravelChatPage = () => {
   const [agentStatuses,    setAgentStatuses]    = useState({});
   const [progressPercent,  setProgressPercent]  = useState(0);
   const [results,          setResults]          = useState({});
+  const [preferenceWeights, setPreferenceWeights] = useState<Record<string, number> | null>(null);
+  const [showPreferencePoll, setShowPreferencePoll] = useState(false);
 
   const wsRef          = useRef(null);
   const messagesEndRef = useRef(null);
@@ -742,7 +745,11 @@ const TravelChatPage = () => {
       const response = await fetch("http://localhost:8010/api/v2/orchestrator/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: userInput, session_id: newSessionId }),
+        body: JSON.stringify({
+          query: userInput,
+          session_id: newSessionId,
+          ...(preferenceWeights ? { preference_weights: preferenceWeights } : {}),
+        }),
       });
 
       if (!response.ok) {
@@ -774,6 +781,8 @@ const TravelChatPage = () => {
     setAgentStatuses({});
     setProgressPercent(0);
     setResults({});
+    setPreferenceWeights(null);
+    setShowPreferencePoll(true);
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -821,6 +830,44 @@ const TravelChatPage = () => {
         <div className="flex-1 overflow-y-auto px-6 py-8">
           <div className="max-w-5xl mx-auto">
             <AnimatePresence>
+
+              {/* Pre-Trip Preference Poll — shown before any messages */}
+              {messages.length === 0 && !isProcessing && (
+                showPreferencePoll ? (
+                  <PreferencePoll
+                    onSubmit={(weights) => {
+                      setPreferenceWeights(weights);
+                      setShowPreferencePoll(false);
+                    }}
+                    onSkip={() => setShowPreferencePoll(false)}
+                  />
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 flex justify-center"
+                  >
+                    {preferenceWeights ? (
+                      <div className="flex items-center gap-3 px-5 py-2.5 bg-violet-500/10 border border-violet-500/25 rounded-full backdrop-blur-md">
+                        <span className="text-emerald-400 text-sm">✅ Preferences applied</span>
+                        <button
+                          onClick={() => setShowPreferencePoll(true)}
+                          className="text-xs text-violet-300 hover:text-violet-100 underline underline-offset-2 transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowPreferencePoll(true)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-full text-sm text-zinc-400 hover:text-zinc-200 hover:border-violet-500/30 transition-all backdrop-blur-md"
+                      >
+                        <span>⚖️</span> Set travel preferences
+                      </button>
+                    )}
+                  </motion.div>
+                )
+              )}
 
               {/* Chat messages */}
               {messages.map((msg, idx) => (

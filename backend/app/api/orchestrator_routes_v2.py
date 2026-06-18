@@ -34,6 +34,10 @@ class TravelQueryRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Session ID for conversation continuity")
     user_id: Optional[str] = Field(None, description="Optional user ID")
     force_new_session: bool = Field(False, description="Force create new session ignoring existing memory")
+    preference_weights: Optional[Dict[str, int]] = Field(
+        None,
+        description="Weighted interest preferences (1-5). Keys: culture, food, adventure, shopping, nature, nightlife"
+    )
     
     class Config:
         json_schema_extra = {
@@ -205,7 +209,8 @@ async def create_travel_plan(
                 
                 result = await orchestrator.process_query(
                     user_query=request.query,
-                    session_id=session_id
+                    session_id=session_id,
+                    preference_weights=request.preference_weights
                 )
                 
                 logger.info(f"✅ Background workflow completed for {session_id}")

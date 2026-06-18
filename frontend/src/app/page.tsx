@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
+import PreferencePoll from "@/components/PreferencePoll";
 import Hyperspeed from "@/components/Hyperspeed/Hyperspeed";
 
 // Leaflet needs `window`, so load TripMap only on the client
@@ -599,6 +600,8 @@ const Page = () => {
   const [planData, setPlanData] = useState<PlanData | null>(null);
   const [userQuery, setUserQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [preferenceWeights, setPreferenceWeights] = useState<Record<string, number> | null>(null);
+  const [showPreferencePoll, setShowPreferencePoll] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8010";
 
   useEffect(() => { const t = setInterval(() => setTitleIdx(p => (p+1)%titles.length), 4000); return () => clearInterval(t); }, []);
@@ -608,7 +611,7 @@ const Page = () => {
     try {
       const startRes = await fetch(`${API_URL}/api/v2/orchestrator/plan`, {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ query, session_id: null }),
+        body: JSON.stringify({ query, session_id: null, ...(preferenceWeights ? { preference_weights: preferenceWeights } : {}) }),
       });
       if (!startRes.ok) throw new Error((await startRes.json().catch(()=>({}))).detail || "Failed to start plan");
       const { session_id } = await startRes.json();
@@ -668,9 +671,9 @@ const Page = () => {
       const msg = err instanceof Error ? err.message : "Unknown error";
       console.error("Plan error:", msg); setError(msg); setIsPlanning(false);
     }
-  }, [API_URL]);
+  }, [API_URL, preferenceWeights]);
 
-  const handleNewPlan = () => { setPlanData(null); setIsPlanning(false); setUserQuery(""); setError(null); };
+  const handleNewPlan = () => { setPlanData(null); setIsPlanning(false); setUserQuery(""); setError(null); setPreferenceWeights(null); setShowPreferencePoll(true); };
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-black relative">
@@ -680,8 +683,8 @@ const Page = () => {
         <AnimatePresence mode="wait">
           {!isPlanning && !planData && (
             <motion.div key="landing" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              className="h-full flex flex-col items-center justify-between px-4 py-4">
-              <div className="mt-40 mb-12 text-center">
+              className="h-full flex flex-col items-center px-4 py-4 overflow-y-auto">
+              <div className="mt-28 mb-8 text-center">
                 <AnimatePresence mode="wait">
                   <motion.h1 key={titleIdx} initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-20 }} transition={{ duration:0.5 }}
                     className="text-5xl font-light bg-gradient-to-r from-white via-zinc-300 to-zinc-700 bg-clip-text text-transparent mb-4">
@@ -692,6 +695,45 @@ const Page = () => {
                   Describe your dream trip and let AI craft the perfect itinerary
                 </motion.p>
               </div>
+
+              {/* Pre-Trip Preference Poll */}
+              {showPreferencePoll ? (
+                <div className="w-full flex justify-center mb-6">
+                  <PreferencePoll
+                    onSubmit={(weights) => {
+                      setPreferenceWeights(weights);
+                      setShowPreferencePoll(false);
+                    }}
+                    onSkip={() => setShowPreferencePoll(false)}
+                  />
+                </div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-6"
+                >
+                  {preferenceWeights ? (
+                    <div className="flex items-center gap-3 px-5 py-2.5 bg-violet-500/10 border border-violet-500/25 rounded-full backdrop-blur-md">
+                      <span className="text-emerald-400 text-sm">✅ Preferences applied</span>
+                      <button
+                        onClick={() => setShowPreferencePoll(true)}
+                        className="text-xs text-violet-300 hover:text-violet-100 underline underline-offset-2 transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowPreferencePoll(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-full text-sm text-zinc-400 hover:text-zinc-200 hover:border-violet-500/30 transition-all backdrop-blur-md"
+                    >
+                      <span>⚖️</span> Set travel preferences
+                    </button>
+                  )}
+                </motion.div>
+              )}
+
               <TypewriterPrompt onSubmit={handlePlanSubmit} />
             </motion.div>
           )}
