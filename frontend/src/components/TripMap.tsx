@@ -31,6 +31,7 @@ interface RouteStop {
   visit_minutes?: number;
   category?: string;
 }
+interface ItineraryDay { day: number; date: string; activities: string[] }
 interface TripMapProps {
   mapsData: MapsData;
   itineraryDays?: ItineraryDay[];

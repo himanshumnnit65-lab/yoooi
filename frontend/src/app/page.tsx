@@ -315,105 +315,279 @@ const EventsCard = ({ events }: { events: EventInfo[] }) => {
   );
 };
 
+// ─── Tab definitions ──────────────────────────────────────────────────────────
+type SectionTab = "itinerary" | "map" | "weather" | "budget" | "events";
+const SECTION_TABS: { id: SectionTab; label: string; icon: string }[] = [
+  { id: "itinerary", label: "Itinerary", icon: "📅" },
+  { id: "map",       label: "Map & Route", icon: "🗺️" },
+  { id: "weather",   label: "Weather", icon: "🌤️" },
+  { id: "budget",    label: "Budget", icon: "💰" },
+  { id: "events",    label: "Events", icon: "🎭" },
+];
+
 // ─── ItineraryView ────────────────────────────────────────────────────────────
 const ItineraryView = ({ data, userQuery }: { data: PlanData; userQuery: string }) => {
+  const [activeTab, setActiveTab] = useState<SectionTab>("itinerary");
   const currency = data.budget?.currency || "INR";
   const fmt = (n: number) => new Intl.NumberFormat("en-IN", { style:"currency", currency, maximumFractionDigits:0 }).format(n||0);
   const budget: Budget = { total:0, transportation:0, accommodation:0, food:0, activities:0, currency:"INR", ...(data.budget||{}) };
+
+  // Badge text for each tab
+  const badges: Record<SectionTab, string> = {
+    itinerary: `${data.itinerary.length} day${data.itinerary.length !== 1 ? "s" : ""}`,
+    map: data.maps ? "✓" : "—",
+    weather: `${data.weather.filter(w => w.temperature_max != null || w.description).length} days`,
+    budget: fmt(budget.total),
+    events: `${data.events?.length || 0} found`,
+  };
+
   return (
     <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="w-full max-w-6xl mx-auto px-4 pb-20">
       {/* Query bubble */}
-      <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} className="mb-8 p-6 bg-zinc-900/50 backdrop-blur-md border border-zinc-800 rounded-2xl">
+      <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} className="mb-6 p-6 bg-zinc-900/50 backdrop-blur-md border border-zinc-800 rounded-2xl">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-red-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">You</div>
           <p className="text-zinc-300 text-lg">{userQuery}</p>
         </div>
       </motion.div>
       {/* AI header */}
-      <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.1 }} className="mb-8 flex items-center gap-3">
+      <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.1 }} className="mb-6 flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-700 to-red-900 flex items-center justify-center"><span className="text-xl">🎪</span></div>
         <div><h2 className="text-2xl font-light text-zinc-100">Ringmaster</h2><p className="text-sm text-zinc-500">Your AI Travel Planner</p></div>
       </motion.div>
-      {/* Budget */}
-      <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}
-        className="mb-8 p-6 bg-gradient-to-br from-red-900/20 to-amber-900/20 backdrop-blur-md border border-red-800/30 rounded-2xl">
-        <h3 className="text-xl font-light text-zinc-100 mb-4 flex items-center gap-2"><span>💰</span> Budget Breakdown</h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[{label:"Total",value:budget.total,h:true},{label:"Transport",value:budget.transportation},{label:"Stay",value:budget.accommodation},{label:"Food",value:budget.food},{label:"Activities",value:budget.activities}].map(({label,value,h})=>(
-            <div key={label} className="text-center">
-              <div className={`font-bold ${h?"text-2xl text-amber-400":"text-lg text-zinc-300"}`}>{fmt(value)}</div>
-              <div className="text-sm text-zinc-400">{label}</div>
-            </div>
-          ))}
+
+      {/* ── Tab Bar ──────────────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity:0, y:10 }}
+        animate={{ opacity:1, y:0 }}
+        transition={{ delay:0.15 }}
+        className="mb-8 sticky top-[72px] z-30"
+      >
+        <div className="flex items-center gap-1 p-1.5 bg-black/50 backdrop-blur-xl border border-zinc-800/60 rounded-2xl shadow-2xl overflow-x-auto scrollbar-none">
+          {SECTION_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+                  isActive
+                    ? "bg-gradient-to-r from-violet-600/80 to-fuchsia-600/60 text-white shadow-lg shadow-violet-500/20"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                }`}
+              >
+                <span className="text-base">{tab.icon}</span>
+                <span>{tab.label}</span>
+                {badges[tab.id] && badges[tab.id] !== "—" && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    isActive
+                      ? "bg-white/20 text-white/90"
+                      : "bg-zinc-800 text-zinc-500"
+                  }`}>
+                    {badges[tab.id]}
+                  </span>
+                )}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTabIndicator"
+                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-violet-600/80 to-fuchsia-600/60 -z-10"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
       </motion.div>
-      {/* Weather */}
-      <WeatherStrip weather={data.weather} />
-      {/* Route */}
-      {data.maps && <RouteCard maps={data.maps} />}
-      {/* Interactive Map */}
-      {data.maps && (
-        <TripMap
-          mapsData={data.maps}
-          itineraryDays={data.itinerary}
-          origin={data.maps.origin}
-          destination={data.maps.destination}
-          routeOptimization={data.route_optimization}
-        />
-      )}
-      {/* Events */}
-      <EventsCard events={data.events} />
-      {/* Days */}
-      {data.itinerary?.length > 0 ? data.itinerary.map((day, index) => {
-        const w = data.weather?.[index];
-        return (
-          <motion.div key={day.day} initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.4+index*0.08 }}
-            className="mb-6 p-6 bg-black/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl hover:border-zinc-700/50 transition-all">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-2xl font-light text-zinc-100 mb-1">Day {day.day}</h3>
-                <p className="text-zinc-400">{fmtDate(day.date)}</p>
-              </div>
-              <div className="text-right flex flex-col items-end gap-1">
-                {day.estimated_cost != null && <div className="text-lg text-amber-400 font-semibold">{fmt(day.estimated_cost)}</div>}
-                {w && (
-                  <div className="flex items-center gap-1.5 text-sm text-blue-300">
-                    <span>{weatherEmoji(w.description, w.precipitation_chance)}</span>
-                    {w.temperature_max != null && <span>{Math.round(w.temperature_max)}°C</span>}
-                    {w.temperature_min != null && <span className="text-zinc-500">/ {Math.round(w.temperature_min)}°C</span>}
+
+      {/* ── Tab Content ─────────────────────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {/* ── Itinerary Tab ─────────────────────────────────────────────────── */}
+        {activeTab === "itinerary" && (
+          <motion.div
+            key="tab-itinerary"
+            initial={{ opacity:0, y:16 }}
+            animate={{ opacity:1, y:0 }}
+            exit={{ opacity:0, y:-12 }}
+            transition={{ duration:0.25 }}
+          >
+            {data.itinerary?.length > 0 ? data.itinerary.map((day, index) => {
+              const w = data.weather?.[index];
+              return (
+                <motion.div key={day.day} initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.05+index*0.06 }}
+                  className="mb-6 p-6 bg-black/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl hover:border-zinc-700/50 transition-all">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-2xl font-light text-zinc-100 mb-1">Day {day.day}</h3>
+                      <p className="text-zinc-400">{fmtDate(day.date)}</p>
+                    </div>
+                    <div className="text-right flex flex-col items-end gap-1">
+                      {day.estimated_cost != null && <div className="text-lg text-amber-400 font-semibold">{fmt(day.estimated_cost)}</div>}
+                      {w && (
+                        <div className="flex items-center gap-1.5 text-sm text-blue-300">
+                          <span>{weatherEmoji(w.description, w.precipitation_chance)}</span>
+                          {w.temperature_max != null && <span>{Math.round(w.temperature_max)}°C</span>}
+                          {w.temperature_min != null && <span className="text-zinc-500">/ {Math.round(w.temperature_min)}°C</span>}
+                        </div>
+                      )}
+                      {w?.precipitation_chance != null && w.precipitation_chance > 0 && (
+                        <div className="text-xs text-blue-400">💧 {w.precipitation_chance}% rain</div>
+                      )}
+                    </div>
                   </div>
-                )}
-                {w?.precipitation_chance != null && w.precipitation_chance > 0 && (
-                  <div className="text-xs text-blue-400">💧 {w.precipitation_chance}% rain</div>
-                )}
-              </div>
-            </div>
-            {w && w.precipitation_chance != null && w.precipitation_chance > 40 && (
-              <div className="mb-3 px-3 py-2 bg-blue-900/20 border border-blue-700/20 rounded-lg text-xs text-blue-300 flex items-center gap-2">
-                <span>🌧️</span>{w.precipitation_chance > 70 ? "High rain expected — carry umbrella, prefer indoor attractions" : "Moderate rain chance — keep umbrella handy"}
-              </div>
-            )}
-            {day.notes && (
-              <div className="mb-4 p-3 bg-amber-900/10 border border-amber-800/30 rounded-lg">
-                <p className="text-sm text-amber-200/80 flex items-start gap-2"><span className="text-amber-500">⚠️</span>{day.notes}</p>
-              </div>
-            )}
-            <div className="space-y-3">
-              {day.activities.map((act, ai) => (
-                <motion.div key={ai} initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.5+index*0.08+ai*0.04 }} className="flex gap-3 items-start group">
-                  <div className="w-2 h-2 mt-2 rounded-full bg-red-800 group-hover:bg-red-500 transition-colors flex-shrink-0" />
-                  <p className="text-zinc-300 group-hover:text-zinc-100 transition-colors">{act}</p>
+                  {w && w.precipitation_chance != null && w.precipitation_chance > 40 && (
+                    <div className="mb-3 px-3 py-2 bg-blue-900/20 border border-blue-700/20 rounded-lg text-xs text-blue-300 flex items-center gap-2">
+                      <span>🌧️</span>{w.precipitation_chance > 70 ? "High rain expected — carry umbrella, prefer indoor attractions" : "Moderate rain chance — keep umbrella handy"}
+                    </div>
+                  )}
+                  {day.notes && (
+                    <div className="mb-4 p-3 bg-amber-900/10 border border-amber-800/30 rounded-lg">
+                      <p className="text-sm text-amber-200/80 flex items-start gap-2"><span className="text-amber-500">⚠️</span>{day.notes}</p>
+                    </div>
+                  )}
+                  <div className="space-y-3">
+                    {day.activities.map((act, ai) => (
+                      <motion.div key={ai} initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }} transition={{ delay:0.08+index*0.06+ai*0.03 }} className="flex gap-3 items-start group">
+                        <div className="w-2 h-2 mt-2 rounded-full bg-red-800 group-hover:bg-red-500 transition-colors flex-shrink-0" />
+                        <p className="text-zinc-300 group-hover:text-zinc-100 transition-colors">{act}</p>
+                      </motion.div>
+                    ))}
+                  </div>
                 </motion.div>
-              ))}
-            </div>
+              );
+            }) : (
+              <div className="text-center text-zinc-400 py-12">
+                <p className="text-xl mb-2">No itinerary days found</p>
+                <p className="text-sm">The plan was generated but contained no day-by-day schedule.</p>
+              </div>
+            )}
           </motion.div>
-        );
-      }) : (
-        <div className="text-center text-zinc-400 py-12">
-          <p className="text-xl mb-2">No itinerary days found</p>
-          <p className="text-sm">The plan was generated but contained no day-by-day schedule.</p>
-        </div>
-      )}
+        )}
+
+        {/* ── Map & Route Tab ───────────────────────────────────────────────── */}
+        {activeTab === "map" && (
+          <motion.div
+            key="tab-map"
+            initial={{ opacity:0, y:16 }}
+            animate={{ opacity:1, y:0 }}
+            exit={{ opacity:0, y:-12 }}
+            transition={{ duration:0.25 }}
+          >
+            {data.maps ? (
+              <>
+                <RouteCard maps={data.maps} />
+                <TripMap
+                  mapsData={data.maps}
+                  itineraryDays={data.itinerary}
+                  origin={data.maps.origin}
+                  destination={data.maps.destination}
+                  routeOptimization={data.route_optimization}
+                />
+              </>
+            ) : (
+              <div className="text-center text-zinc-400 py-16">
+                <span className="text-4xl block mb-3">🗺️</span>
+                <p className="text-xl mb-2">No map data available</p>
+                <p className="text-sm">Route information was not generated for this trip.</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Weather Tab ───────────────────────────────────────────────────── */}
+        {activeTab === "weather" && (
+          <motion.div
+            key="tab-weather"
+            initial={{ opacity:0, y:16 }}
+            animate={{ opacity:1, y:0 }}
+            exit={{ opacity:0, y:-12 }}
+            transition={{ duration:0.25 }}
+          >
+            <WeatherStrip weather={data.weather} />
+            {(!data.weather || data.weather.filter(w => w.temperature_max != null || w.description).length === 0) && (
+              <div className="text-center text-zinc-400 py-16">
+                <span className="text-4xl block mb-3">🌤️</span>
+                <p className="text-xl mb-2">No weather data available</p>
+                <p className="text-sm">Weather forecast was not generated for this trip.</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Budget Tab ────────────────────────────────────────────────────── */}
+        {activeTab === "budget" && (
+          <motion.div
+            key="tab-budget"
+            initial={{ opacity:0, y:16 }}
+            animate={{ opacity:1, y:0 }}
+            exit={{ opacity:0, y:-12 }}
+            transition={{ duration:0.25 }}
+          >
+            <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }}
+              className="mb-8 p-6 bg-gradient-to-br from-red-900/20 to-amber-900/20 backdrop-blur-md border border-red-800/30 rounded-2xl">
+              <h3 className="text-xl font-light text-zinc-100 mb-6 flex items-center gap-2"><span>💰</span> Budget Breakdown</h3>
+              {/* Total highlight */}
+              <div className="text-center mb-8">
+                <div className="text-4xl font-bold text-amber-400">{fmt(budget.total)}</div>
+                <div className="text-sm text-zinc-400 mt-1">Estimated Total</div>
+              </div>
+              {/* Category grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label:"Transport", value:budget.transportation, icon:"🚗", color:"from-violet-900/30 border-violet-700/30" },
+                  { label:"Accommodation", value:budget.accommodation, icon:"🏨", color:"from-blue-900/30 border-blue-700/30" },
+                  { label:"Food", value:budget.food, icon:"🍽️", color:"from-orange-900/30 border-orange-700/30" },
+                  { label:"Activities", value:budget.activities, icon:"🎯", color:"from-emerald-900/30 border-emerald-700/30" },
+                ].map(({ label, value, icon, color }) => (
+                  <div key={label} className={`p-4 bg-gradient-to-br ${color} border rounded-xl text-center`}>
+                    <div className="text-2xl mb-2">{icon}</div>
+                    <div className="text-lg font-semibold text-zinc-100">{fmt(value)}</div>
+                    <div className="text-xs text-zinc-400 mt-1">{label}</div>
+                    {budget.total > 0 && (
+                      <div className="mt-2 h-1.5 bg-black/30 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.round((value / budget.total) * 100)}%` }}
+                          transition={{ delay: 0.3, duration: 0.6 }}
+                          className="h-full bg-amber-400/60 rounded-full"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* Per-day estimate */}
+              {data.itinerary.length > 0 && budget.total > 0 && (
+                <div className="mt-6 pt-4 border-t border-zinc-800/50 text-center">
+                  <span className="text-sm text-zinc-400">≈ </span>
+                  <span className="text-lg font-semibold text-zinc-200">{fmt(Math.round(budget.total / data.itinerary.length))}</span>
+                  <span className="text-sm text-zinc-400"> per day</span>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* ── Events Tab ────────────────────────────────────────────────────── */}
+        {activeTab === "events" && (
+          <motion.div
+            key="tab-events"
+            initial={{ opacity:0, y:16 }}
+            animate={{ opacity:1, y:0 }}
+            exit={{ opacity:0, y:-12 }}
+            transition={{ duration:0.25 }}
+          >
+            <EventsCard events={data.events} />
+            {(!data.events || data.events.length === 0) && (
+              <div className="text-center text-zinc-400 py-16">
+                <span className="text-4xl block mb-3">🎭</span>
+                <p className="text-xl mb-2">No events found</p>
+                <p className="text-sm">No local events or festivals were found for your travel dates.</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
