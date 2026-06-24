@@ -12,6 +12,9 @@ const Navbar = () => {
           <Link href="/" className='cursor-pointer hover:scale-105 transition-all duration-200 hover:text-white'>
             Home
           </Link>
+          <Link href="/chat" className='cursor-pointer hover:scale-105 transition-all duration-200 hover:text-zinc-100 hover:text-white'>
+            AI Chat
+          </Link>
           <div className='cursor-pointer hover:scale-105 transition-all duration-200 hover:text-zinc-100 hidden md:block'>Services</div>
           <div className='cursor-pointer hover:scale-105 transition-all duration-200 hover:text-zinc-100 hidden md:block'>About us</div>
           <div className='cursor-pointer hover:scale-105 transition-all duration-200 hover:text-zinc-100 hidden md:block'>Pricing</div>

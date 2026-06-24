@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { MessageCircle, ChevronUp, ChevronDown, Clock } from "lucide-react";
 import dynamic from "next/dynamic";
 import PreferencePoll from "@/components/PreferencePoll";
 import Hyperspeed from "@/components/Hyperspeed/Hyperspeed";
@@ -10,7 +11,7 @@ const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
 
 const HyperspeedBackground = memo(function HyperspeedBackground() {
   return (
-    <div className="absolute scale-60 -left-75 -top-50 bottom-0 right-0 h-full w-full pointer-events-none">
+    <div className="fixed scale-60 -left-75 -top-50 bottom-0 right-0 h-screen w-screen pointer-events-none">
       <Hyperspeed effectOptions={{ colors: { roadColor: 0x080808, islandColor: 0x0a0a0a, background: 0x000000, shoulderLines: 0x131318, brokenLines: 0x131318, leftCars: [0x7d0d1b, 0xa90519, 0xff102a], rightCars: [0xf1eece, 0xe6e2b1, 0xdfd98a], sticks: 0xf1eece } }} />
       <div className="w-full h-full bg-gradient-to-b from-zinc-900/20 to-black/40" />
     </div>
@@ -300,8 +301,8 @@ const RouteCard = ({ maps }: { maps: MapsData }) => {
             {primary.duration && <div className="text-sm text-emerald-200">⏱️ {primary.duration}</div>}
           </div>
         )}
-        {Object.entries(alts).filter(([, r]) => r.distance || r.duration).map(([mode, route]) => (
-          <div key={mode} className="p-4 bg-black/20 border border-emerald-800/20 rounded-xl">
+        {Object.entries(alts).filter(([, r]) => r.distance || r.duration).map(([mode, route], idx) => (
+          <div key={mode || idx} className="p-4 bg-black/20 border border-emerald-800/20 rounded-xl">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xl">{modeEmoji(mode)}</span>
               <span className="text-zinc-300 capitalize">{mode}</span>
@@ -936,6 +937,482 @@ const SECTION_TABS: { id: SectionTab; label: string; icon: string }[] = [
   { id: "events",    label: "Events", icon: "🎭" },
 ];
 
+// ─── Chat Feature Types ────────────────────────────────────────────────────────
+interface PhraseCard { phrase_en: string; phrase_local: string; script?: string; pronunciation?: string; usage_tip?: string; }
+interface ChecklistItem { item: string; category: string; packed: boolean; }
+interface PlacePin { name: string; lat: number; lng: number; category: string; description?: string; }
+interface FlightStatusInfo { flight_code: string; airline: string; status: string; departure?: string; arrival?: string; terminal?: string; gate?: string; delay_minutes: number; }
+interface ProactiveAlert { message: string; severity: string; day?: number; }
+interface ChatMessage {
+  role: string;
+  content: string;
+  phrase_cards?: PhraseCard[];
+  checklist?: ChecklistItem[];
+  place_pins?: PlacePin[];
+  flight_status?: FlightStatusInfo;
+  proactive_alerts?: ProactiveAlert[];
+  expense_update?: { logged_expense?: { amount: number; category: string; description: string; date_str?: string }; total_logged?: number; cost_per_person?: number; travelers_count?: number; entry_count?: number; category_breakdown?: Record<string, number>; };
+}
+
+// ─── Phrase Card UI ────────────────────────────────────────────────────────────
+const PhraseCardBubble = ({ cards }: { cards: PhraseCard[] }) => (
+  <div className="mt-3 space-y-2">
+    <p className="text-xs text-fuchsia-300/70 font-semibold uppercase tracking-wider mb-2">🌐 Local Phrases</p>
+    {cards.map((c, i) => (
+      <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+        className="bg-gradient-to-r from-fuchsia-950/60 to-violet-950/60 border border-fuchsia-500/30 rounded-2xl p-3 group">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1">
+            <p className="text-fuchsia-100 font-semibold text-sm">{c.phrase_en}</p>
+            <p className="text-violet-200 text-base font-bold mt-0.5">{c.phrase_local}</p>
+            {c.script && c.script !== c.phrase_local && <p className="text-fuchsia-300/60 text-xs mt-0.5 italic">{c.script}</p>}
+            {c.pronunciation && <p className="text-amber-300/80 text-xs mt-1">🔤 {c.pronunciation}</p>}
+            {c.usage_tip && <p className="text-zinc-400 text-xs mt-1">{c.usage_tip}</p>}
+          </div>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <button title="Copy phrase" onClick={() => navigator.clipboard.writeText(c.phrase_local)}
+              className="p-1.5 rounded-lg bg-fuchsia-500/10 hover:bg-fuchsia-500/25 text-fuchsia-300 transition-colors text-xs">📋</button>
+            <button title="Pronounce" onClick={() => { const u = new SpeechSynthesisUtterance(c.phrase_local); window.speechSynthesis.speak(u); }}
+              className="p-1.5 rounded-lg bg-violet-500/10 hover:bg-violet-500/25 text-violet-300 transition-colors text-xs">🔊</button>
+          </div>
+        </div>
+      </motion.div>
+    ))}
+  </div>
+);
+
+// ─── Packing Checklist UI ──────────────────────────────────────────────────────
+const PackingChecklistBubble = ({ items, sessionId }: { items: ChecklistItem[]; sessionId: string }) => {
+  const storageKey = `packing_checklist_${sessionId}`;
+  const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || "{}"); } catch { return {}; }
+  });
+  const toggle = (idx: number) => {
+    const updated = { ...checkedItems, [idx]: !checkedItems[idx] };
+    setCheckedItems(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+  };
+  const categories = [...new Set(items.map(i => i.category))];
+  const packed = Object.values(checkedItems).filter(Boolean).length;
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-emerald-300/70 font-semibold uppercase tracking-wider">🎒 Packing Checklist</p>
+        <span className="text-xs text-emerald-400 font-bold">{packed}/{items.length} packed</span>
+      </div>
+      <div className="w-full bg-black/30 rounded-full h-1.5 mb-3">
+        <div className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-500" style={{ width: `${(packed / items.length) * 100}%` }} />
+      </div>
+      {categories.map(cat => (
+        <div key={cat} className="mb-2">
+          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1 font-medium">{cat}</p>
+          <div className="space-y-1">
+            {items.filter(it => it.category === cat).map((it, i) => {
+              const globalIdx = items.findIndex(x => x === it);
+              return (
+                <label key={i} className="flex items-center gap-2 cursor-pointer group">
+                  <input type="checkbox" checked={!!checkedItems[globalIdx]} onChange={() => toggle(globalIdx)}
+                    className="rounded border-emerald-500/30 bg-black/30 text-emerald-500 focus:ring-emerald-500/20 w-3.5 h-3.5 flex-shrink-0" />
+                  <span className={`text-xs transition-all ${checkedItems[globalIdx] ? "line-through text-zinc-600" : "text-zinc-200 group-hover:text-emerald-200"}`}>{it.item}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─── Flight Status Card ────────────────────────────────────────────────────────
+const FlightStatusCard = ({ status }: { status: FlightStatusInfo }) => {
+  const color = status.status === "On Time" || status.status === "Arrived" ? "emerald" :
+    status.status === "Boarding" || status.status === "Departed" ? "amber" : "red";
+  const colorMap: Record<string, string> = {
+    emerald: "border-emerald-500/40 from-emerald-950/50 to-teal-950/50 text-emerald-300",
+    amber: "border-amber-500/40 from-amber-950/50 to-yellow-950/50 text-amber-300",
+    red: "border-red-500/40 from-red-950/50 to-orange-950/50 text-red-300",
+  };
+  return (
+    <div className={`mt-3 rounded-2xl border bg-gradient-to-br p-4 ${colorMap[color]}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">✈️</span>
+          <div>
+            <p className="font-bold text-sm text-white">{status.flight_code}</p>
+            <p className="text-xs opacity-70">{status.airline}</p>
+          </div>
+        </div>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold ${colorMap[color]} border`}>{status.status}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+        {status.departure && <div><p className="opacity-50">Departure</p><p className="font-bold text-white">{status.departure}</p></div>}
+        {status.arrival && <div><p className="opacity-50">Arrival</p><p className="font-bold text-white">{status.arrival}</p></div>}
+        {status.terminal && <div><p className="opacity-50">Terminal</p><p className="font-bold text-white">{status.terminal}</p></div>}
+        {status.gate && <div><p className="opacity-50">Gate</p><p className="font-bold text-white">{status.gate}</p></div>}
+        {status.delay_minutes > 0 && <div className="col-span-2"><p className="opacity-50">Delay</p><p className="font-bold text-red-300">+{status.delay_minutes} min</p></div>}
+      </div>
+    </div>
+  );
+};
+
+// ─── Proactive Alert Banner ────────────────────────────────────────────────────
+const ProactiveAlertBubble = ({ alerts }: { alerts: ProactiveAlert[] }) => (
+  <div className="space-y-2 mt-1">
+    <p className="text-xs text-amber-300/70 font-semibold uppercase tracking-wider">⚡ TBuddy Notices</p>
+    {alerts.map((alert, i) => {
+      const styles: Record<string, string> = {
+        critical: "border-red-500/50 bg-red-950/40 text-red-200",
+        warning: "border-amber-500/40 bg-amber-950/40 text-amber-200",
+        info: "border-blue-500/30 bg-blue-950/30 text-blue-200",
+      };
+      const icons: Record<string, string> = { critical: "🚨", warning: "⚠️", info: "💡" };
+      return (
+        <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
+          className={`flex gap-2.5 p-3 rounded-2xl border ${styles[alert.severity] || styles.warning}`}>
+          <span className="text-base flex-shrink-0">{icons[alert.severity] || "⚠️"}</span>
+          <div>
+            {alert.day && <p className="text-xs font-bold opacity-70 mb-0.5">Day {alert.day}</p>}
+            <p className="text-xs leading-relaxed">{alert.message}</p>
+          </div>
+        </motion.div>
+      );
+    })}
+  </div>
+);
+
+// ─── Expense Update Card ───────────────────────────────────────────────────────
+const CATEGORY_EMOJI: Record<string, string> = {
+  Food: "🍽️", Transport: "🚌", Accommodation: "🏨", Activities: "🏄", Shopping: "🛍️", Other: "📦",
+};
+
+const ExpenseUpdateCard = ({ update }: { update: ChatMessage["expense_update"] }) => {
+  if (!update) return null;
+  const exp = update.logged_expense;
+  const categoryEntries = Object.entries(update.category_breakdown ?? {});
+  const travelers = update.travelers_count ?? 1;
+  return (
+    <div className="mt-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-950/40 to-emerald-950/40 p-4 space-y-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="text-lg">💸</span>
+        <p className="text-xs text-green-300 font-semibold uppercase tracking-wider">Expense Logged</p>
+        <span className="ml-auto text-[10px] text-zinc-500 bg-zinc-800/60 px-2 py-0.5 rounded-full">
+          #{update.entry_count} entry
+        </span>
+      </div>
+
+      {/* Latest expense row */}
+      {exp && (
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm text-zinc-200 font-medium capitalize">{exp.description}</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[10px] bg-green-900/50 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">
+                {CATEGORY_EMOJI[exp.category] ?? "📦"} {exp.category}
+              </span>
+              {exp.date_str && (
+                <span className="text-[10px] text-zinc-500">📅 {exp.date_str}</span>
+              )}
+            </div>
+          </div>
+          <span className="text-green-300 font-bold text-base whitespace-nowrap">₹{exp.amount?.toLocaleString("en-IN")}</span>
+        </div>
+      )}
+
+      {/* Totals grid */}
+      <div className="border-t border-green-500/20 pt-3 grid grid-cols-3 gap-2 text-xs">
+        <div>
+          <p className="text-zinc-500">Total Logged</p>
+          <p className="text-white font-bold text-sm">₹{update.total_logged?.toLocaleString("en-IN")}</p>
+        </div>
+        <div>
+          <p className="text-zinc-500">Per Person</p>
+          <p className="text-emerald-300 font-bold text-sm">₹{update.cost_per_person?.toLocaleString("en-IN")}</p>
+        </div>
+        <div>
+          <p className="text-zinc-500">Travelers</p>
+          <p className="text-zinc-300 font-bold text-sm">👥 {travelers}</p>
+        </div>
+      </div>
+
+      {/* Category breakdown */}
+      {categoryEntries.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">By Category</p>
+          {categoryEntries.map(([cat, amt]) => (
+            <div key={cat} className="flex items-center justify-between text-xs">
+              <span className="text-zinc-400">{CATEGORY_EMOJI[cat] ?? "📦"} {cat}</span>
+              <span className="text-zinc-300 font-medium">₹{(amt as number).toLocaleString("en-IN")}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Map Pin Notification ──────────────────────────────────────────────────────
+const MapPinNotice = ({ pins }: { pins: PlacePin[] }) => (
+  <div className="mt-3 flex items-start gap-2 p-3 rounded-2xl border border-orange-500/30 bg-orange-950/30">
+    <span className="text-base flex-shrink-0">📍</span>
+    <div>
+      <p className="text-xs text-orange-300 font-semibold">{pins.length} place{pins.length > 1 ? "s" : ""} pinned on your Map!</p>
+      <p className="text-xs text-zinc-400 mt-0.5">{pins.map(p => p.name).join(", ")}</p>
+      <p className="text-xs text-orange-400/60 mt-1">Switch to the Map tab to explore them →</p>
+    </div>
+  </div>
+);
+
+// ─── Trip Chat Panel ──────────────────────────────────────────────────────────
+const TripChatPanel = ({
+  sessionId, API_URL, onNewPins, onNewExpense
+}: {
+  sessionId: string | null;
+  API_URL: string;
+  onNewPins?: (pins: PlacePin[]) => void;
+  onNewExpense?: (update: ChatMessage["expense_update"]) => void;
+}) => {
+  const [isOpen, setIsOpen] = useState(true);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  if (!sessionId) return null;
+
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || isSending) return;
+
+    const userMsg = chatInput.trim();
+    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatInput("");
+    setIsSending(true);
+
+    try {
+      const res = await fetch(
+        `${API_URL}/api/v2/orchestrator/session/${sessionId}/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMsg }),
+        }
+      );
+      if (!res.ok) throw new Error("Chat request failed");
+      const data = await res.json();
+
+      // Notify parent about new map pins (Feature 1)
+      if (data.place_pins && data.place_pins.length > 0 && onNewPins) {
+        onNewPins(data.place_pins);
+      }
+
+      const newMsg: ChatMessage = {
+        role: "assistant",
+        content: data.reply,
+        phrase_cards: data.phrase_cards,
+        checklist: data.checklist,
+        place_pins: data.place_pins,
+        flight_status: data.flight_status,
+        proactive_alerts: data.proactive_alerts,
+        expense_update: data.expense_update,
+      };
+      setChatMessages((prev) => [...prev, newMsg]);
+
+      // Notify parent about new expense (Feature 2 — Budget Tab sync)
+      if (data.expense_update && onNewExpense) {
+        onNewExpense(data.expense_update);
+      }
+    } catch {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I couldn't process that. Please try again." },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const suggestedQuestions = [
+    "Show me a packing checklist",
+    "How do I say 'thank you' locally?",
+    "Find cafes near my hotel",
+    "I spent ₹800 on lunch today",
+    "Is my flight 6E202 on time?",
+    "What should I wear to the temple?",
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-6 text-left h-full flex flex-col"
+    >
+      <div className="rounded-3xl bg-gradient-to-br from-red-950/40 via-purple-950/40 to-fuchsia-950/40 border border-red-500/30 backdrop-blur-xl shadow-2xl overflow-hidden flex-1 flex flex-col">
+        {/* Header / Toggle */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors flex-shrink-0"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-red-500/20 rounded-xl animate-pulse">
+              <MessageCircle className="w-6 h-6 text-red-300" />
+            </div>
+            <div className="text-left">
+              <h3 className="text-lg font-bold bg-gradient-to-r from-red-300 via-fuchsia-300 to-violet-300 bg-clip-text text-transparent">
+                TBuddy Co-Pilot
+              </h3>
+              <p className="text-red-200/60 text-xs mt-0.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                Maps · Expenses · Phrases · Flights · Alerts
+              </p>
+            </div>
+          </div>
+          {isOpen ? (
+            <ChevronUp className="w-5 h-5 text-red-300" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-red-300" />
+          )}
+        </button>
+
+        {/* Chat body */}
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="lg:flex-1 lg:flex lg:flex-col lg:overflow-hidden"
+            >
+              <div className="border-t border-red-500/20 lg:flex-1 lg:flex lg:flex-col lg:overflow-hidden">
+                {/* Messages */}
+                <div className="max-h-[550px] overflow-y-auto overscroll-contain p-5 space-y-4 lg:flex-1 lg:max-h-none">
+                  {chatMessages.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-500/20 to-fuchsia-500/20 border border-red-500/20 mx-auto mb-4 flex items-center justify-center">
+                        <MessageCircle className="w-8 h-8 text-red-400/60" />
+                      </div>
+                      <p className="text-red-200/70 text-sm font-medium mb-1">Your AI Travel Co-Pilot</p>
+                      <p className="text-zinc-500 text-xs mb-6">Powered by RAG + Groq · 6 intelligent features</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {suggestedQuestions.map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => setChatInput(q)}
+                            className="px-3 py-2.5 bg-black/30 border border-white/10 rounded-xl text-xs text-zinc-300 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-200 transition-all text-left leading-snug"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {chatMessages.map((msg, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      {msg.role === "user" ? (
+                        <div className="max-w-[80%] p-4 rounded-3xl text-sm leading-relaxed bg-gradient-to-br from-red-600 via-fuchsia-600 to-violet-600 text-white shadow-lg shadow-red-500/10">
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      ) : (
+                        <div className="max-w-[90%] flex flex-col gap-1">
+                          {/* Assistant avatar + reply */}
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-red-500/30 to-fuchsia-500/30 border border-red-500/20 flex items-center justify-center text-xs flex-shrink-0 mt-1">🤖</div>
+                            <div className="bg-black/30 border border-red-500/20 rounded-3xl p-4 text-sm leading-relaxed text-red-100">
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+
+                              {/* Feature 3 — Proactive Alerts */}
+                              {msg.proactive_alerts && msg.proactive_alerts.length > 0 && (
+                                <ProactiveAlertBubble alerts={msg.proactive_alerts} />
+                              )}
+
+                              {/* Feature 6 — Phrase Cards */}
+                              {msg.phrase_cards && msg.phrase_cards.length > 0 && (
+                                <PhraseCardBubble cards={msg.phrase_cards} />
+                              )}
+
+                              {/* Feature 4 — Packing Checklist */}
+                              {msg.checklist && msg.checklist.length > 0 && (
+                                <PackingChecklistBubble items={msg.checklist} sessionId={sessionId} />
+                              )}
+
+                              {/* Feature 5 — Flight Status */}
+                              {msg.flight_status && (
+                                <FlightStatusCard status={msg.flight_status} />
+                              )}
+
+                              {/* Feature 2 — Expense Update */}
+                              {msg.expense_update && (
+                                <ExpenseUpdateCard update={msg.expense_update} />
+                              )}
+
+                              {/* Feature 1 — Map Pin Notice */}
+                              {msg.place_pins && msg.place_pins.length > 0 && (
+                                <MapPinNotice pins={msg.place_pins} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+
+                  {/* Typing indicator */}
+                  {isSending && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-red-500/30 to-fuchsia-500/30 border border-red-500/20 flex items-center justify-center text-xs">🤖</div>
+                        <div className="bg-black/30 border border-red-500/20 rounded-3xl px-5 py-4 flex items-center gap-1.5">
+                          {[0, 0.15, 0.3].map((delay, i) => (
+                            <motion.span key={i} className="w-1.5 h-1.5 rounded-full bg-red-400"
+                              animate={{ y: [0, -5, 0] }} transition={{ duration: 0.7, repeat: Infinity, delay }} />
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="p-4 border-t border-red-500/20 flex gap-3 flex-shrink-0">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && handleSendChat()}
+                    placeholder="Ask about your trip, log expenses, get phrases..."
+                    disabled={isSending}
+                    className="flex-1 bg-black/40 border border-red-500/30 rounded-2xl px-4 py-3 text-sm text-zinc-100 placeholder-red-300/30 focus:outline-none focus:border-red-400/50 focus:ring-1 focus:ring-red-400/25 disabled:opacity-50 transition-all"
+                  />
+                  <button
+                    onClick={handleSendChat}
+                    disabled={!chatInput.trim() || isSending}
+                    className="px-5 py-3 bg-gradient-to-r from-red-600 via-fuchsia-600 to-violet-600 hover:from-red-500 hover:to-violet-500 disabled:from-zinc-800 disabled:to-zinc-700 text-white text-sm font-bold rounded-2xl transition-all disabled:opacity-50 shadow-md shadow-red-600/10 hover:shadow-red-600/25"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+};
+
 // ─── ItineraryView ────────────────────────────────────────────────────────────
 const ItineraryView = ({
   data,
@@ -961,6 +1438,33 @@ const ItineraryView = ({
   const [loadingHotels, setLoadingHotels] = useState(false);
   const [hotelError, setHotelError] = useState<string | null>(null);
   const [hotelsFetched, setHotelsFetched] = useState(false);
+
+  // Dynamic map pins from chatbot (Feature 1 — Map-Linked Chat)
+  const [dynamicPins, setDynamicPins] = useState<{ name: string; lat: number; lng: number; category: string; description?: string }[]>([]);
+  const handleNewPins = (pins: { name: string; lat: number; lng: number; category: string; description?: string }[]) => {
+    setDynamicPins((prev) => {
+      // Deduplicate by name
+      const existingNames = new Set(prev.map(p => p.name));
+      const newUnique = pins.filter(p => !existingNames.has(p.name));
+      return [...prev, ...newUnique];
+    });
+    // Auto-switch to map tab so user sees pins
+    setActiveTab("map");
+  };
+
+  // Feature 2 — Live Expense Tracker: accumulate all chat-logged expenses
+  const [loggedExpenses, setLoggedExpenses] = useState<{
+    amount: number; category: string; description: string; date_str?: string;
+  }[]>([]);
+  const [totalLogged, setTotalLogged] = useState(0);
+  const [expenseCategoryBreakdown, setExpenseCategoryBreakdown] = useState<Record<string, number>>({});
+
+  const handleNewExpense = (update: ChatMessage["expense_update"]) => {
+    if (!update?.logged_expense) return;
+    setLoggedExpenses(prev => [...prev, update.logged_expense!]);
+    setTotalLogged(update.total_logged ?? 0);
+    setExpenseCategoryBreakdown(update.category_breakdown ?? {});
+  };
 
   const handleFetchHotels = async () => {
     if (!sessionId) return;
@@ -1040,7 +1544,16 @@ const ItineraryView = ({
   };
   const currency = data.budget?.currency || "INR";
   const fmt = (n: number) => new Intl.NumberFormat("en-IN", { style:"currency", currency, maximumFractionDigits:0 }).format(n||0);
-  const budget: Budget = { total:0, transportation:0, accommodation:0, food:0, activities:0, currency:"INR", ...(data.budget||{}) };
+  const budget: Budget = {
+    total: data.budget?.total || 0,
+    transportation: data.budget?.transportation || 0,
+    accommodation: data.budget?.accommodation || 0,
+    food: data.budget?.food || 0,
+    activities: data.budget?.activities || 0,
+    currency: data.budget?.currency || "INR",
+  };
+  const remaining = budget.total > 0 ? budget.total - totalLogged : 0;
+  const spendPct = budget.total > 0 ? Math.min(100, Math.round((totalLogged / budget.total) * 100)) : 0;
 
   // Badge text for each tab
   const badges: Record<SectionTab, string> = {
@@ -1053,7 +1566,10 @@ const ItineraryView = ({
   };
 
   return (
-    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="w-full max-w-6xl mx-auto px-4 pb-20">
+    <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="w-full h-full max-w-7xl mx-auto px-4 overflow-hidden">
+      <div className="flex flex-col lg:flex-row gap-8 h-full overflow-hidden">
+        {/* Left Column: Itinerary Details (scrolls internally) */}
+        <div className="flex-1 lg:w-2/3 h-full overflow-y-auto pr-2 scrollbar-none pb-12">
       {/* Query bubble */}
       <motion.div initial={{ opacity:0, y:-20 }} animate={{ opacity:1, y:0 }} className="mb-6 p-6 bg-zinc-900/50 backdrop-blur-md border border-zinc-800 rounded-2xl">
         <div className="flex items-start gap-4">
@@ -1072,7 +1588,7 @@ const ItineraryView = ({
         initial={{ opacity:0, y:10 }}
         animate={{ opacity:1, y:0 }}
         transition={{ delay:0.15 }}
-        className="mb-8 sticky top-[72px] z-30"
+        className="mb-8 sticky top-0 z-30"
       >
         <div className="flex items-center gap-1 p-1.5 bg-black/50 backdrop-blur-xl border border-zinc-800/60 rounded-2xl shadow-2xl overflow-x-auto scrollbar-none">
           {SECTION_TABS.map((tab) => {
@@ -1125,7 +1641,7 @@ const ItineraryView = ({
             {data.itinerary?.length > 0 ? data.itinerary.map((day, index) => {
               const w = data.weather?.[index];
               return (
-                <motion.div key={day.day} initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.05+index*0.06 }}
+                <motion.div key={day.day || index} initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.05+index*0.06 }}
                   className="mb-6 p-6 bg-black/40 backdrop-blur-md border border-zinc-800/50 rounded-2xl hover:border-zinc-700/50 transition-all">
                   <div className="flex justify-between items-start mb-4">
                     <div>
@@ -1265,6 +1781,7 @@ const ItineraryView = ({
                   destination={data.maps.destination}
                   routeOptimization={data.route_optimization}
                   hotels={hotelData?.hotels || []}
+                  dynamicPins={dynamicPins}
                 />
               </>
             ) : (
@@ -1348,6 +1865,79 @@ const ItineraryView = ({
                 </div>
               )}
             </motion.div>
+
+            {/* ── Live Expense Tracker (from TBuddy chat) ────────────────── */}
+            {loggedExpenses.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+                className="p-6 bg-gradient-to-br from-green-900/20 to-emerald-900/10 backdrop-blur-md border border-green-800/30 rounded-2xl"
+              >
+                <h3 className="text-xl font-light text-zinc-100 mb-6 flex items-center gap-2">
+                  <span>💸</span> Actual Spending
+                  <span className="ml-auto text-xs text-green-400 bg-green-900/40 border border-green-700/30 px-2 py-1 rounded-full">
+                    Logged via TBuddy
+                  </span>
+                </h3>
+
+                {/* Spent vs Planned bar */}
+                {budget.total > 0 && (
+                  <div className="mb-6">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-zinc-400">Spent so far</span>
+                      <span className={`font-semibold ${totalLogged > budget.total ? "text-red-400" : "text-green-400"}`}>
+                        {fmt(totalLogged)} / {fmt(budget.total)} ({spendPct}%)
+                      </span>
+                    </div>
+                    <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${spendPct}%` }}
+                        transition={{ duration: 0.7 }}
+                        className={`h-full rounded-full ${
+                          spendPct > 90 ? "bg-red-500" : spendPct > 70 ? "bg-amber-400" : "bg-emerald-500"
+                        }`}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                      <span>₹0</span>
+                      <span className={remaining < 0 ? "text-red-400 font-medium" : "text-zinc-400"}>
+                        {remaining < 0 ? `Over budget by ${fmt(Math.abs(remaining))}` : `${fmt(remaining)} remaining`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Category breakdown */}
+                {Object.keys(expenseCategoryBreakdown).length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                    {Object.entries(expenseCategoryBreakdown).map(([cat, amt]) => (
+                      <div key={cat} className="p-3 bg-black/20 border border-zinc-700/30 rounded-xl text-center">
+                        <div className="text-xl mb-1">{({Food:"🍽️",Transport:"🚌",Accommodation:"🏨",Activities:"🏄",Shopping:"🛍️",Other:"📦"})[cat] ?? "📦"}</div>
+                        <div className="text-sm font-semibold text-zinc-100">{fmt(amt as number)}</div>
+                        <div className="text-xs text-zinc-500 mt-0.5">{cat}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Individual expense log */}
+                <div className="space-y-2">
+                  <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Expense Log</p>
+                  {loggedExpenses.map((exp, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-2 border-b border-zinc-800/40 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span>{({Food:"🍽️",Transport:"🚌",Accommodation:"🏨",Activities:"🏄",Shopping:"🛍️",Other:"📦"})[exp.category] ?? "📦"}</span>
+                        <div>
+                          <p className="text-zinc-300 capitalize">{exp.description}</p>
+                          {exp.date_str && <p className="text-[11px] text-zinc-600">{exp.date_str}</p>}
+                        </div>
+                      </div>
+                      <span className="text-green-300 font-semibold">{fmt(exp.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
           </motion.div>
         )}
 
@@ -1392,6 +1982,15 @@ const ItineraryView = ({
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+
+        {/* Right Column: Chat Co-Pilot (scrolls internally, doesn't affect left column) */}
+        <div className="lg:w-1/3 h-[500px] lg:h-full flex flex-col pb-12 flex-shrink-0">
+          {sessionId && (
+            <TripChatPanel sessionId={sessionId} API_URL={API_URL} onNewPins={handleNewPins} onNewExpense={handleNewExpense} />
+          )}
+        </div>
+      </div>
     </motion.div>
   );
 };
@@ -1418,7 +2017,7 @@ const Page = () => {
     try {
       const startRes = await fetch(`${API_URL}/api/v2/orchestrator/plan`, {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ query, session_id: null, ...(preferenceWeights ? { preference_weights: preferenceWeights } : {}) }),
+        body: JSON.stringify({ query, session_id: null, include_travel_options: true, ...(preferenceWeights ? { preference_weights: preferenceWeights } : {}) }),
       });
       if (!startRes.ok) throw new Error((await startRes.json().catch(()=>({}))).detail || "Failed to start plan");
       const { session_id } = await startRes.json();
@@ -1487,7 +2086,7 @@ const Page = () => {
     <div className="h-screen w-screen overflow-hidden bg-black relative">
       <LightRaysBackground /><HyperspeedBackground />
       <div className="bg-black/60 inset-0 absolute" />
-      <div className="relative z-10 h-full w-full">
+      <div className="relative z-10 h-full w-full pt-16 flex flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           {!isPlanning && !planData && (
             <motion.div key="landing" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
@@ -1551,15 +2150,15 @@ const Page = () => {
             </motion.div>
           )}
           {planData && (
-            <motion.div key="results" initial={{ opacity:0 }} animate={{ opacity:1 }} className="h-full overflow-y-auto">
-              <div className="sticky top-0 z-20 backdrop-blur-xl bg-black/80 border-b border-zinc-800 px-4 py-4">
+            <motion.div key="results" initial={{ opacity:0 }} animate={{ opacity:1 }} className="h-full flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 backdrop-blur-xl bg-black/80 border-b border-zinc-800 px-4 py-4 z-20">
                 <div className="max-w-6xl mx-auto flex justify-between items-center">
                   <motion.button whileHover={{ scale:1.05 }} whileTap={{ scale:0.95 }} onClick={handleNewPlan}
                     className="px-4 py-2 bg-zinc-800/50 hover:bg-zinc-700/50 border border-zinc-700 rounded-lg text-zinc-300 transition-all">← New Plan</motion.button>
                   <div className="text-zinc-400 text-sm">{planData.itinerary.length} day{planData.itinerary.length!==1?"s":""} planned</div>
                 </div>
               </div>
-              <div className="pt-8">
+              <div className="flex-1 overflow-hidden pt-6">
                 <ItineraryView
                   data={planData}
                   userQuery={userQuery}

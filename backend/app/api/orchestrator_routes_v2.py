@@ -396,6 +396,537 @@ async def get_conversation_history(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== CHAT ENDPOINT ====================
+
+MAX_CHAT_HISTORY = 15  # Sliding window to prevent token overflow
+
+
+class ChatRequest(BaseModel):
+    """Request model for conversational chat"""
+    message: str = Field(..., min_length=1, description="User's chat message")
+
+
+class PhraseCard(BaseModel):
+    """A local-language phrase card"""
+    phrase_en: str
+    phrase_local: str
+    script: Optional[str] = None
+    pronunciation: Optional[str] = None
+    usage_tip: Optional[str] = None
+
+
+class ChecklistItem(BaseModel):
+    """An interactive packing checklist item"""
+    item: str
+    category: str
+    packed: bool = False
+
+
+class PlacePin(BaseModel):
+    """A geo-pinnable location for the map"""
+    name: str
+    lat: float
+    lng: float
+    category: str
+    description: Optional[str] = None
+
+
+class FlightStatusInfo(BaseModel):
+    """Live or mocked flight status"""
+    flight_code: str
+    airline: str
+    status: str
+    departure: Optional[str] = None
+    arrival: Optional[str] = None
+    terminal: Optional[str] = None
+    gate: Optional[str] = None
+    delay_minutes: int = 0
+
+
+class ProactiveAlert(BaseModel):
+    """A proactive conflict or risk alert"""
+    message: str
+    severity: str  # "warning", "info", "critical"
+    day: Optional[int] = None
+
+
+class ExpenseEntry(BaseModel):
+    """A logged real expense entry"""
+    amount: float
+    category: str
+    description: str
+    logged_at: str
+
+
+class ChatResponse(BaseModel):
+    """Response model for chat with rich metadata"""
+    reply: str
+    session_id: str
+    rag_sources_used: int
+    # Feature 6 — Local Language
+    phrase_cards: Optional[List[PhraseCard]] = None
+    # Feature 4 — Packing Checklist
+    checklist: Optional[List[ChecklistItem]] = None
+    # Feature 3 — Proactive Alerts (surfaced on first message)
+    proactive_alerts: Optional[List[ProactiveAlert]] = None
+    # Feature 2 — Expense Tracker
+    expense_update: Optional[Dict[str, Any]] = None
+    # Feature 1 — Map-Linked Chat
+    place_pins: Optional[List[PlacePin]] = None
+    # Feature 5 — Flight Status
+    flight_status: Optional[FlightStatusInfo] = None
+
+
+def _summarize_itinerary(itinerary_data: Optional[Dict[str, Any]]) -> str:
+    """
+    Convert nested itinerary_data into a compact LLM-friendly summary.
+    
+    This avoids stuffing the full JSON into the context window while
+    giving the chatbot enough detail to answer day-specific questions.
+    """
+    if not itinerary_data:
+        return "No itinerary generated yet."
+
+    days = itinerary_data.get("itinerary_days", [])
+    if not days:
+        return "No itinerary generated yet."
+
+    lines = []
+    for day in days:
+        day_num = day.get("day", "?")
+        date = day.get("date", "")
+        activities = day.get("activities", [])
+        # Truncate each activity to 80 chars, show up to 5
+        act_summary = "; ".join(a[:80] for a in activities[:5])
+        cost = day.get("estimated_cost")
+        cost_str = f" [~₹{cost:,.0f}]" if cost else ""
+        lines.append(f"Day {day_num} ({date}){cost_str}: {act_summary}")
+
+    return "\n".join(lines)
+
+
+import re as _re
+
+
+def _detect_intent(message: str) -> Dict[str, Any]:
+    """Detect special intents in a chat message."""
+    msg = message.lower()
+    intents = {
+        "is_phrase_query": any(kw in msg for kw in [
+            "how do i say", "how to say", "local language", "phrase",
+            "translate", "how do i ask", "local word", "what is the word",
+            "how to ask", "language tip",
+        ]),
+        "is_checklist_query": any(kw in msg for kw in [
+            "packing checklist", "what to pack", "what should i pack",
+            "show checklist", "pack list", "packing list", "luggage list",
+            "what to bring", "checklist",
+        ]),
+        "is_expense_log": any(kw in msg for kw in [
+            "i spent", "i paid", "log expense", "add expense",
+            "just paid", "paid for", "spent on", "cost me", "we spent",
+        ]),
+        "is_geo_query": any(kw in msg for kw in [
+            "nearby", "close to", "near my hotel", "near day", "around day",
+            "places near", "show me", "find me", "cafes near", "restaurants near",
+            "attractions near", "things to do near",
+        ]),
+        "is_flight_query": bool(_re.search(
+            r'\b(flight|is my flight|am i on time|flight status|delayed|on time)\b', msg
+        )),
+        "flight_code": None,
+    }
+    # Extract flight code pattern like AI202, 6E302, IndiGo 302
+    flight_match = _re.search(r'\b([A-Z0-9]{2}\d{2,4})\b', message.upper())
+    if flight_match:
+        intents["flight_code"] = flight_match.group(1)
+    return intents
+
+
+async def _generate_phrase_cards(llm, destination: str, user_query: str) -> List[Dict]:
+    """Generate local language phrase cards via LLM."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    prompt = f"""You are a linguistic travel guide. The user is visiting {destination}.
+Generate 4-6 practical local language phrases relevant to their question: "{user_query}"
+
+For each phrase, return a JSON array with objects having these fields:
+- phrase_en: English phrase
+- phrase_local: the local language equivalent
+- script: the original script (Devanagari/Latin/Arabic etc), optional
+- pronunciation: Roman transliteration for pronunciation
+- usage_tip: brief context when to use it
+
+Respond with ONLY a valid JSON array, no markdown, no extra text.
+Example: [{"phrase_en": "How much?", "phrase_local": "Kitna?", "script": "कितना?", "pronunciation": "kit-na", "usage_tip": "Use when shopping"}]"""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=user_query)])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning(f"Phrase cards generation failed: {e}")
+        return []
+
+
+async def _generate_checklist(llm, destination: str, weather_data: Optional[Dict], itinerary_data: Optional[Dict]) -> List[Dict]:
+    """Generate a context-aware packing checklist via LLM."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    weather_summary = ""
+    if weather_data:
+        forecasts = weather_data.get("weather_forecast", [])
+        if forecasts:
+            temps = [f.get("temp_max", 0) for f in forecasts[:3]]
+            avg_temp = sum(temps) / len(temps) if temps else 25
+            weather_summary = f"Average temperature ~{avg_temp:.0f}°C"
+    days = 3
+    if itinerary_data:
+        days_list = itinerary_data.get("itinerary_days", [])
+        days = len(days_list) if days_list else 3
+
+    prompt = f"""Generate a smart packing checklist for a {days}-day trip to {destination}. {weather_summary}
+
+Return a JSON array of items:
+[{{"item": "Sunscreen SPF 50", "category": "Health", "packed": false}}, ...]
+
+Categories: Documents, Clothing, Health, Electronics, Toiletries, Extras
+Include 18-22 items. Respond with ONLY a valid JSON array."""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content="Generate checklist")])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning(f"Checklist generation failed: {e}")
+        return []
+
+
+async def _parse_and_log_expense(redis_client, session_id: str, message: str, llm) -> Optional[Dict]:
+    """Parse expense from natural language and store in Redis."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    prompt = f"""Extract expense details from this message: "{message}"
+
+Return ONLY a valid JSON object with these fields:
+- amount: numeric value of the expense (required)
+- category: one of Food, Transport, Accommodation, Activities, Shopping, Other
+- description: short description of what was bought
+- travelers_count: number of people sharing this expense (look for phrases like "for 2 of us", "for 3 people", "split between 4"). Default to 1 only if no group is mentioned.
+- date_str: date of the expense if mentioned, else null
+
+Example: {{"amount": 1500, "category": "Food", "description": "dinner at Goan shack", "travelers_count": 2, "date_str": "2026-07-17"}}
+Respond with ONLY valid JSON, no markdown."""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=message)])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        expense = json.loads(raw)
+        if not expense.get("amount"):
+            return None
+
+        expense["logged_at"] = datetime.utcnow().isoformat()
+        expense_key = f"expenses:{session_id}"
+        existing_raw = await redis_client.client.get(expense_key)
+        expenses = json.loads(existing_raw) if existing_raw else []
+        expenses.append(expense)
+        await redis_client.client.set(expense_key, json.dumps(expenses), ex=86400)
+
+        # Compute totals
+        total_logged = sum(e.get("amount", 0) for e in expenses)
+
+        # Use max travelers_count seen across all expenses for consistent per-person split
+        travelers = max((e.get("travelers_count", 1) or 1) for e in expenses)
+
+        # Per-category breakdown
+        category_totals: Dict[str, float] = {}
+        for e in expenses:
+            cat = e.get("category", "Other")
+            category_totals[cat] = category_totals.get(cat, 0) + e.get("amount", 0)
+
+        return {
+            "logged_expense": expense,
+            "total_logged": total_logged,
+            "cost_per_person": round(total_logged / travelers, 2),
+            "travelers_count": travelers,
+            "entry_count": len(expenses),
+            "category_breakdown": category_totals,
+        }
+    except Exception as e:
+        logger.warning(f"Expense parsing failed: {e}")
+        return None
+
+
+async def _generate_place_pins(llm, destination: str, user_query: str) -> List[Dict]:
+    """Generate geo-pinnable places from a natural language query."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    prompt = f"""The user is visiting {destination} and asks: "{user_query}"
+
+Find 3-5 specific places that answer their question. Return a JSON array:
+[{{"name": "Cafe Name", "lat": 12.345, "lng": 77.123, "category": "cafe", "description": "Great coffee spot"}}]
+
+Use realistic approximate coordinates for {destination}.
+Categories: cafe, restaurant, temple, market, museum, park, beach, viewpoint, hotel, hospital
+Respond with ONLY a valid JSON array."""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=user_query)])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning(f"Place pins generation failed: {e}")
+        return []
+
+
+async def _get_proactive_alerts(redis_client, session_id: str, llm, state: Dict) -> List[Dict]:
+    """Generate proactive travel conflict alerts (cached after first generation)."""
+    alerts_key = f"proactive_alerts:{session_id}"
+    cached = await redis_client.client.get(alerts_key)
+    if cached:
+        return json.loads(cached)
+
+    from langchain_core.messages import SystemMessage, HumanMessage
+    itinerary_data = state.get("itinerary_data")
+    maps_data = state.get("maps_data")
+    weather_data = state.get("weather_data")
+    budget_data = state.get("budget_data")
+    destination = state.get("destination", "")
+
+    if not itinerary_data:
+        return []
+
+    itinerary_summary = _summarize_itinerary(itinerary_data)
+    budget_str = ""
+    if budget_data:
+        bb = budget_data.get("budget_breakdown", budget_data)
+        budget_str = f"Budget: ₹{bb.get('total', 0)} total"
+
+    prompt = f"""You are a proactive travel safety and conflict detection system.
+
+Trip to {destination}:
+{itinerary_summary}
+{budget_str}
+
+Identify 1-3 REAL potential conflicts or risks:
+- Transit mismatches (late arrival vs metro closing time)
+- Weather conflicts (rain on outdoor-heavy days)
+- Budget overruns
+- Timing clashes (two far-apart activities with insufficient travel time)
+- Cultural guidelines (dress codes, photography restrictions)
+
+Return a JSON array:
+[{{"message": "Your flight lands at 10 PM but metro closes at 10:15 PM. Consider pre-booking a cab.", "severity": "warning", "day": 1}}]
+
+Severity: "info", "warning", "critical"
+Only return GENUINE actionable alerts. If no real conflicts, return [].
+Respond with ONLY a valid JSON array."""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content="Analyze")])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        alerts = json.loads(raw)
+        await redis_client.client.set(alerts_key, json.dumps(alerts), ex=43200)  # 12h cache
+        return alerts
+    except Exception as e:
+        logger.warning(f"Proactive alerts generation failed: {e}")
+        return []
+
+
+async def _mock_flight_status(llm, flight_code: str, destination: str) -> Dict:
+    """Generate a plausible flight status via LLM (mock when no real API key)."""
+    from langchain_core.messages import SystemMessage, HumanMessage
+    prompt = f"""Generate a realistic flight status for flight {flight_code} to {destination}.
+Return JSON only:
+{{"flight_code": "{flight_code}", "airline": "IndiGo", "status": "On Time", "departure": "06:30", "arrival": "08:45", "terminal": "T2", "gate": "G14", "delay_minutes": 0}}
+Statuses: "On Time", "Delayed", "Boarding", "Departed", "Arrived"
+Respond with ONLY valid JSON."""
+    try:
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=flight_code)])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        return json.loads(raw)
+    except Exception as e:
+        logger.warning(f"Flight status mock failed: {e}")
+        return {"flight_code": flight_code, "airline": "Unknown", "status": "Unknown", "delay_minutes": 0}
+
+
+@router.post("/session/{session_id}/chat", response_model=ChatResponse)
+async def chat_with_trip(session_id: str, request: ChatRequest):
+    """
+    Conversational chatbot for a planned trip.
+
+    Now supports 6 advanced features:
+    - Feature 1: Map-Linked Pins (geo queries return place_pins)
+    - Feature 2: Expense Tracker ("I spent ₹X" auto-logs and returns expense_update)
+    - Feature 3: Proactive Alerts (returned on first message of each session)
+    - Feature 4: Packing Checklist (returns interactive checklist items)
+    - Feature 5: Flight Status (returns flight_status card)
+    - Feature 6: Local Language Phrases (returns phrase_cards)
+    """
+    try:
+        orchestrator = get_orchestrator()
+        redis_client = orchestrator.redis_client
+
+        # ── 1. Fetch session state from Redis ────────────────────────
+        state = await redis_client.get_state(session_id)
+        if not state:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found. Plan a trip first."
+            )
+
+        destination = state.get("destination", "unknown destination")
+        itinerary_data = state.get("itinerary_data")
+        budget_data = state.get("budget_data")
+        weather_data = state.get("weather_data")
+
+        # ── 2. Summarize itinerary for context ───────────────────────
+        itinerary_summary = _summarize_itinerary(itinerary_data)
+
+        # ── 3. RAG context from Pinecone ─────────────────────────────
+        rag_tips = []
+        rag_context = ""
+        if settings.pinecone_api_key:
+            try:
+                from app.services.vector_service import search_travel_tips
+                rag_tips = search_travel_tips(
+                    query=request.message,
+                    destination=destination,
+                )
+                if rag_tips:
+                    rag_context = "\n".join(f"• {t}" for t in rag_tips)
+            except Exception as e:
+                logger.warning(f"⚠️ Chat RAG lookup failed: {e}")
+
+        # ── 4. Fetch/cap chat history ────────────────────────────────
+        history_key = f"chat_history:{session_id}"
+        raw_history = await redis_client.client.get(history_key)
+        chat_history = json.loads(raw_history) if raw_history else []
+        is_first_message = len(chat_history) == 0
+        chat_history = chat_history[-MAX_CHAT_HISTORY:]
+
+        # ── 5. Detect message intent ─────────────────────────────────
+        intent = _detect_intent(request.message)
+
+        # ── 6. Initialize LLM ────────────────────────────────────────
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
+        llm = ChatGroq(
+            api_key=settings.groq_api_key,
+            model_name=settings.model_name,
+            temperature=0.3,
+        )
+
+        # ── 7. Build LLM messages ────────────────────────────────────
+        budget_str = ""
+        if budget_data and isinstance(budget_data, dict):
+            bb = budget_data.get("budget_breakdown", budget_data)
+            budget_str = (
+                f"\nBudget: ₹{bb.get('total', 'N/A')} total "
+                f"(transport ₹{bb.get('transportation', '?')}, "
+                f"food ₹{bb.get('food', '?')}, "
+                f"activities ₹{bb.get('activities', '?')})"
+            )
+
+        system_prompt = f"""You are TBuddy, a helpful and knowledgeable travel assistant.
+
+The user has the following planned trip to {destination}:
+
+{itinerary_summary}
+{budget_str}
+
+Use these verified local guidelines when relevant:
+{rag_context or 'No specific guidelines available.'}
+
+Instructions:
+- Answer the user's question about their trip. Be specific and reference actual places and days from their itinerary.
+- If asked about dress codes, transit, food, or safety, use the local guidelines above.
+- If asked to modify the itinerary, explain what you'd recommend changing but note that actual modifications require using the trip planner.
+- Be concise but helpful. Use a friendly, conversational tone.
+- For expense logs, acknowledge what was logged and mention the updated budget.
+- For language questions, give the translation in your reply text as well.
+- For packing checklists, give a brief intro in the reply text."""
+
+        messages = [SystemMessage(content=system_prompt)]
+        for msg in chat_history:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+        messages.append(HumanMessage(content=request.message))
+
+        # ── 8. Call LLM ──────────────────────────────────────────────
+        ai_response = await llm.ainvoke(messages)
+        reply_text = ai_response.content
+
+        # ── 9. Persist chat history to Redis ─────────────────────────
+        chat_history.append({"role": "user", "content": request.message})
+        chat_history.append({"role": "assistant", "content": reply_text})
+        await redis_client.client.set(
+            history_key,
+            json.dumps(chat_history),
+            ex=3600,  # 1-hour TTL
+        )
+
+        # ── 10. Run feature enrichments in parallel ───────────────────
+        phrase_cards_raw: List[Dict] = []
+        checklist_raw: List[Dict] = []
+        place_pins_raw: List[Dict] = []
+        expense_update: Optional[Dict] = None
+        flight_status_raw: Optional[Dict] = None
+        proactive_alerts_raw: List[Dict] = []
+
+        # Feature 6 — Local Language Phrases
+        if intent["is_phrase_query"]:
+            phrase_cards_raw = await _generate_phrase_cards(llm, destination, request.message)
+
+        # Feature 4 — Packing Checklist
+        if intent["is_checklist_query"]:
+            checklist_raw = await _generate_checklist(llm, destination, weather_data, itinerary_data)
+
+        # Feature 2 — Expense Tracker
+        if intent["is_expense_log"]:
+            expense_update = await _parse_and_log_expense(redis_client, session_id, request.message, llm)
+
+        # Feature 1 — Map-Linked Geo Pins
+        if intent["is_geo_query"]:
+            place_pins_raw = await _generate_place_pins(llm, destination, request.message)
+
+        # Feature 5 — Flight Status
+        if intent["is_flight_query"] and intent["flight_code"]:
+            flight_status_raw = await _mock_flight_status(llm, intent["flight_code"], destination)
+
+        # Feature 3 — Proactive Alerts (only on first message)
+        if is_first_message and itinerary_data:
+            proactive_alerts_raw = await _get_proactive_alerts(redis_client, session_id, llm, state)
+
+        # ── 11. Parse structured results ─────────────────────────────
+        def parse_list(raw: List[Dict], model_cls):
+            result = []
+            for item in (raw or []):
+                try:
+                    result.append(model_cls(**item))
+                except Exception:
+                    pass
+            return result or None
+
+        phrase_cards = parse_list(phrase_cards_raw, PhraseCard)
+        checklist = parse_list(checklist_raw, ChecklistItem)
+        place_pins = parse_list(place_pins_raw, PlacePin)
+        proactive_alerts = parse_list(proactive_alerts_raw, ProactiveAlert)
+        flight_status = FlightStatusInfo(**flight_status_raw) if flight_status_raw else None
+
+        return ChatResponse(
+            reply=reply_text,
+            session_id=session_id,
+            rag_sources_used=len(rag_tips),
+            phrase_cards=phrase_cards,
+            checklist=checklist,
+            place_pins=place_pins,
+            expense_update=expense_update,
+            flight_status=flight_status,
+            proactive_alerts=proactive_alerts,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat endpoint failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/session/{session_id}/status", response_model=SessionStatusResponse)
 async def get_session_status(session_id: str):
     """
@@ -1294,6 +1825,177 @@ async def apply_swap(session_id: str, request: SwapApplyRequest):
         raise
     except Exception as e:
         logger.error(f"Failed to apply swap: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== EXPENSE TRACKER ENDPOINTS ====================
+
+class ExpenseRequest(BaseModel):
+    """Request to log a real expense"""
+    amount: float = Field(..., gt=0, description="Amount spent")
+    category: str = Field(..., description="Category: Food, Transport, Accommodation, Activities, Shopping, Other")
+    description: str = Field(..., min_length=1, description="What was spent on")
+    travelers_count: int = Field(1, ge=1, description="Number of people splitting the expense")
+
+
+@router.post("/session/{session_id}/expense")
+async def log_expense(session_id: str, request: ExpenseRequest):
+    """
+    Log a real-time expense during the trip.
+    Automatically updates running totals and cost-per-person.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        redis_client = orchestrator.redis_client
+
+        state = await redis_client.get_state(session_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        expense_entry = {
+            "amount": request.amount,
+            "category": request.category,
+            "description": request.description,
+            "travelers_count": request.travelers_count,
+            "logged_at": datetime.utcnow().isoformat(),
+        }
+
+        expense_key = f"expenses:{session_id}"
+        existing_raw = await redis_client.client.get(expense_key)
+        expenses = json.loads(existing_raw) if existing_raw else []
+        expenses.append(expense_entry)
+        await redis_client.client.set(expense_key, json.dumps(expenses), ex=86400)
+
+        total_logged = sum(e.get("amount", 0) for e in expenses)
+        cost_per_person = round(total_logged / request.travelers_count, 2)
+
+        # Category breakdown
+        by_category: Dict[str, float] = {}
+        for e in expenses:
+            cat = e.get("category", "Other")
+            by_category[cat] = by_category.get(cat, 0) + e.get("amount", 0)
+
+        return {
+            "session_id": session_id,
+            "logged_expense": expense_entry,
+            "summary": {
+                "total_logged": total_logged,
+                "cost_per_person": cost_per_person,
+                "entry_count": len(expenses),
+                "by_category": by_category,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Expense logging failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/session/{session_id}/expenses")
+async def get_expenses(session_id: str):
+    """
+    Get all logged real-time expenses for a session.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        redis_client = orchestrator.redis_client
+
+        state = await redis_client.get_state(session_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        expense_key = f"expenses:{session_id}"
+        existing_raw = await redis_client.client.get(expense_key)
+        expenses = json.loads(existing_raw) if existing_raw else []
+
+        total_logged = sum(e.get("amount", 0) for e in expenses)
+        by_category: Dict[str, float] = {}
+        for e in expenses:
+            cat = e.get("category", "Other")
+            by_category[cat] = by_category.get(cat, 0) + e.get("amount", 0)
+
+        return {
+            "session_id": session_id,
+            "expenses": expenses,
+            "summary": {
+                "total_logged": total_logged,
+                "entry_count": len(expenses),
+                "by_category": by_category,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get expenses failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== FLIGHT STATUS ENDPOINT ====================
+
+@router.get("/session/{session_id}/flight-status")
+async def get_flight_status(session_id: str, flight_code: str):
+    """
+    Get live or mocked flight status for a given flight code.
+    Uses LLM-generated plausible data (upgrade to real API when key available).
+    """
+    try:
+        orchestrator = get_orchestrator()
+        redis_client = orchestrator.redis_client
+
+        state = await redis_client.get_state(session_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        destination = state.get("destination", "")
+
+        from langchain_groq import ChatGroq
+        llm = ChatGroq(
+            api_key=settings.groq_api_key,
+            model_name=settings.model_name,
+            temperature=0.1,
+        )
+        result = await _mock_flight_status(llm, flight_code.upper(), destination)
+        return {"session_id": session_id, "flight_status": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Flight status failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== PROACTIVE ALERTS ENDPOINT ====================
+
+@router.get("/session/{session_id}/proactive-alerts")
+async def get_proactive_alerts_endpoint(session_id: str, force_refresh: bool = False):
+    """
+    Get proactive travel conflict alerts for a session.
+    Cached for 12 hours unless force_refresh=true.
+    """
+    try:
+        orchestrator = get_orchestrator()
+        redis_client = orchestrator.redis_client
+
+        state = await redis_client.get_state(session_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if force_refresh:
+            alerts_key = f"proactive_alerts:{session_id}"
+            await redis_client.client.delete(alerts_key)
+
+        from langchain_groq import ChatGroq
+        llm = ChatGroq(
+            api_key=settings.groq_api_key,
+            model_name=settings.model_name,
+            temperature=0.2,
+        )
+        alerts = await _get_proactive_alerts(redis_client, session_id, llm, state)
+        return {"session_id": session_id, "alerts": alerts, "count": len(alerts)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Proactive alerts failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -55,6 +55,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Failed to initialize orchestrator: {e}", exc_info=True)
         logger.warning("⚠️ Orchestrator features disabled")
     
+    # Check Pinecone RAG availability
+    if settings.pinecone_api_key:
+        try:
+            from app.services.vector_service import is_available
+            if is_available():
+                logger.info("✅ Pinecone RAG connected")
+            else:
+                logger.warning("⚠️ Pinecone configured but unreachable — RAG disabled")
+        except Exception as e:
+            logger.warning(f"⚠️ Pinecone check failed: {e} — RAG disabled")
+    else:
+        logger.info("ℹ️  Pinecone not configured — RAG features disabled")
+
     logger.info(f"🚀 API Documentation: http://{settings.host}:{settings.port}/docs")
     logger.info(f"📊 Status endpoint: http://{settings.host}:{settings.port}/status")
     logger.info(f"🔑 API Key Management: http://{settings.host}:{settings.port}/api/v1/keys")

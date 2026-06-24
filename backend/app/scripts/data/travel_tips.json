@@ -1,0 +1,374 @@
+[
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "customs",
+    "content": "When visiting religious sites in Delhi such as Jama Masjid and Gurudwara Bangla Sahib, dress conservatively. Cover your shoulders and knees. Women may need to cover their heads at gurudwaras and mosques. Remove shoes before entering temples, mosques, and gurudwaras."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "transit",
+    "content": "The Delhi Metro is the fastest and most comfortable way to get around the city. Buy a rechargeable smart card at any metro station for discounted fares. The Airport Express Line connects Indira Gandhi International Airport to New Delhi Railway Station in 20 minutes. Avoid auto-rickshaws without meters; insist on using the meter or negotiate the fare before boarding."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "safety",
+    "content": "In crowded areas like Chandni Chowk and Connaught Place, keep your belongings close and be aware of pickpockets. Avoid poorly lit alleys at night. Use verified ride-hailing apps like Ola or Uber for safe late-night travel. Carry a photocopy of your passport and keep the original in your hotel safe."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "food",
+    "content": "Delhi is famous for its street food. Must-try items include chole bhature at Sita Ram Diwan Chand in Paharganj, paranthas at Paranthe Wali Gali in Chandni Chowk, and butter chicken at Moti Mahal in Daryaganj. Drink only bottled or filtered water. Avoid ice in street-side drinks during summer."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "packing",
+    "content": "Delhi experiences extreme temperatures. Summers (April-June) can exceed 45°C — carry sunscreen, sunglasses, a hat, and light cotton clothes. Winters (December-January) drop to 3-5°C — pack warm layers, a jacket, and thermals. During monsoon (July-September), bring a compact umbrella and waterproof footwear."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "customs",
+    "content": "At the Red Fort and Humayun's Tomb, photography is allowed in open areas but not inside the museum galleries. Entry fees differ for Indian nationals and foreigners. Book tickets online on the ASI website to avoid long queues, especially on weekends."
+  },
+  {
+    "destination": "delhi",
+    "country": "india",
+    "category": "transit",
+    "content": "For visiting Old Delhi's narrow lanes (Chandni Chowk, Kinari Bazaar), cycle-rickshaws are the most practical transport. Negotiate the fare beforehand. The hop-on-hop-off tourist bus (HOHO) covers major attractions and costs around INR 500 for a day pass."
+  },
+  {
+    "destination": "agra",
+    "country": "india",
+    "category": "customs",
+    "content": "The Taj Mahal is closed on Fridays except for prayers at the mosque inside the complex. Visit at sunrise for the best light and smallest crowds. Tripods and food items are not allowed inside. Only small bags are permitted — leave large bags at the locker facility near the entrance."
+  },
+  {
+    "destination": "agra",
+    "country": "india",
+    "category": "transit",
+    "content": "Agra is well-connected to Delhi by the Gatimaan Express (fastest train, ~1h40m) and Shatabdi Express. Book train tickets on IRCTC at least a week in advance. Within Agra, pre-paid auto-rickshaws from the railway station are the safest option. Electric buses run between the Taj Mahal and Agra Fort."
+  },
+  {
+    "destination": "agra",
+    "country": "india",
+    "category": "food",
+    "content": "Try Agra's famous petha (a translucent sweet made from ash gourd) from Panchhi Petha near Sadar Bazaar. For meals, Pinch of Spice and Esphahan at the Oberoi Amarvilas offer excellent Mughlai cuisine. Street-side chaat at Sadar Bazaar is popular but eat only at busy stalls for freshness."
+  },
+  {
+    "destination": "agra",
+    "country": "india",
+    "category": "safety",
+    "content": "Beware of unofficial tour guides and touts near the Taj Mahal who may overcharge or lead you to commission-based shops. Use only ASI-certified guides. Avoid buying marble inlay souvenirs from random shops — many sell low-quality imitations."
+  },
+  {
+    "destination": "agra",
+    "country": "india",
+    "category": "packing",
+    "content": "Agra is very hot from March to June (up to 47°C). Carry plenty of water, a sun hat, and comfortable walking shoes for the extensive Taj Mahal and Agra Fort grounds. During winter, early mornings at the Taj can be foggy and cold — bring a warm layer."
+  },
+  {
+    "destination": "jaipur",
+    "country": "india",
+    "category": "customs",
+    "content": "At the City Palace in Jaipur, certain areas require a separate photography pass. Hawa Mahal is best viewed and photographed from the street outside. At Amber Fort, elephant rides are available but increasingly discouraged by animal welfare organizations — consider the jeep ride or walking instead."
+  },
+  {
+    "destination": "jaipur",
+    "country": "india",
+    "category": "transit",
+    "content": "The Jaipur Metro covers limited areas but connects Mansarovar to Badi Chaupar (Old City). Auto-rickshaws are the most common transport — always negotiate the fare. For Amber Fort (11 km from city center), hire a full-day cab or use Ola/Uber. The Jaipur-Delhi highway is excellent for road trips."
+  },
+  {
+    "destination": "jaipur",
+    "country": "india",
+    "category": "food",
+    "content": "Jaipur's signature dish is dal baati churma — try it at Chokhi Dhani (a Rajasthani village-themed restaurant). Lassiwala on MI Road serves the city's most famous lassi. For fine dining, try 1135 AD inside Amber Fort. The local markets sell excellent Rajasthani snacks like pyaaz kachori and ghewar."
+  },
+  {
+    "destination": "jaipur",
+    "country": "india",
+    "category": "safety",
+    "content": "In Jaipur's bazaars (Johari Bazaar, Bapu Bazaar), bargaining is expected — start at 40-50% of the quoted price. Be cautious of gem scam shops that offer 'investment-grade' stones at inflated prices. Buy precious stones only from government-certified shops."
+  },
+  {
+    "destination": "jaipur",
+    "country": "india",
+    "category": "packing",
+    "content": "Jaipur is a desert city with hot days and cool nights. In summer, temperatures exceed 40°C — carry a scarf to protect from sun and dust. Comfortable walking shoes are essential for exploring forts. Pack modest clothing for temple visits."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "customs",
+    "content": "When visiting temples in Goa, dress conservatively. Shorts and sleeveless tops are prohibited at most religious sites including the Basilica of Bom Jesus and Se Cathedral in Old Goa. Beach nudity is illegal in Goa despite the relaxed atmosphere."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "transit",
+    "content": "Renting a scooter or motorcycle is the most popular way to explore Goa (INR 300-500/day). You need a valid driving license. Goa's public buses are cheap but infrequent. The Konkan Railway connects Margao (Madgaon) to Mumbai and Mangalore. Pre-paid taxis from Dabolim Airport are available at fixed rates."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "food",
+    "content": "Goa's cuisine blends Portuguese and Konkani flavors. Must-try dishes include fish curry rice (the staple), vindaloo, bebinca (layered coconut cake), and xacuti. Brittos and Curlies in North Goa serve excellent seafood. For authentic Goan food, visit Ritz Classic or Fisherman's Wharf."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "safety",
+    "content": "Swim only at beaches with lifeguards on duty. The currents at Vagator and Anjuna can be dangerously strong, especially during monsoon. Do not leave valuables unattended on the beach. Drink responsibly — Goa has strict drink-and-drive laws with heavy fines."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "packing",
+    "content": "Pack light, breathable clothing and swimwear. Sunscreen (SPF 50+) is essential year-round. Bring mosquito repellent, especially during and after monsoon season (June-September). A light rain jacket is useful from June to October. Waterproof phone pouches are handy for water activities."
+  },
+  {
+    "destination": "goa",
+    "country": "india",
+    "category": "customs",
+    "content": "Goa's flea markets (Anjuna Wednesday Market, Saturday Night Market in Arpora) are great for souvenirs. Bargaining is expected but be respectful. Tipping 10% at restaurants is customary. Some beach shacks close during monsoon season (June-September)."
+  },
+  {
+    "destination": "mumbai",
+    "country": "india",
+    "category": "transit",
+    "content": "Mumbai's local train network is the lifeline of the city. Buy a tourist pass for unlimited travel. Avoid trains during peak hours (8-10 AM, 6-8 PM) when they are extremely crowded. The Mumbai Metro Line 1 connects Ghatkopar to Versova. BEST buses cover the entire city at very low fares."
+  },
+  {
+    "destination": "mumbai",
+    "country": "india",
+    "category": "food",
+    "content": "Mumbai's street food is legendary. Try vada pav at Ashok Vada Pav in Dadar, pav bhaji at Sardar Refreshments in Tardeo, and bhel puri at Juhu Beach. For fine dining, Trishna in Fort serves award-winning coastal seafood. Leopold Cafe in Colaba is an iconic spot for drinks and history."
+  },
+  {
+    "destination": "mumbai",
+    "country": "india",
+    "category": "customs",
+    "content": "At the Siddhivinayak Temple and Haji Ali Dargah, expect long queues on Tuesdays and Thursdays. Dress modestly. Photography is restricted inside most religious sites. The Gateway of India area has many touts offering boat rides to Elephanta Caves — use only the official MTDC ferry service."
+  },
+  {
+    "destination": "mumbai",
+    "country": "india",
+    "category": "safety",
+    "content": "Mumbai is generally safe for tourists but stay alert in crowded areas like Churchgate and CST station. During monsoon (June-September), avoid low-lying areas prone to flooding. Check Mumbai traffic advisories before planning road travel. Keep emergency numbers handy: police 100, ambulance 108."
+  },
+  {
+    "destination": "mumbai",
+    "country": "india",
+    "category": "packing",
+    "content": "Mumbai is hot and humid most of the year. Pack light cotton clothing, comfortable walking shoes, and an umbrella (essential during monsoon from June to September). Formal attire may be needed for upscale restaurants and bars in South Mumbai. Carry a reusable water bottle."
+  },
+  {
+    "destination": "bangalore",
+    "country": "india",
+    "category": "transit",
+    "content": "Bangalore's traffic is notoriously bad. Use the Namma Metro for quick travel between key areas (Majestic, MG Road, Indiranagar). The airport is 40 km from the city center — Vayu Vajra airport buses are the most reliable option (INR 250-350). Book Ola/Uber during non-peak hours."
+  },
+  {
+    "destination": "bangalore",
+    "country": "india",
+    "category": "food",
+    "content": "Bangalore is a food paradise. Try the iconic masala dosa at Vidyarthi Bhavan in Basavanagudi (expect long queues on weekends), filter coffee at any Darshini restaurant, and biryani at Meghana Foods. The craft beer scene is thriving — visit Toit Brewpub in Indiranagar or Arbor Brewing Company."
+  },
+  {
+    "destination": "bangalore",
+    "country": "india",
+    "category": "customs",
+    "content": "Bangalore has a pleasant climate but the city shuts down relatively early compared to Mumbai or Delhi. Most pubs close by 11:30 PM due to noise regulations. At Lalbagh Botanical Garden and Cubbon Park, entry is free but no pets are allowed. ISKCON Temple requires modest dress."
+  },
+  {
+    "destination": "bangalore",
+    "country": "india",
+    "category": "safety",
+    "content": "Bangalore is one of the safest Indian cities for tourists. However, be cautious of traffic — the city has high accident rates. Pedestrian infrastructure is limited, so use marked crossings. At night, stick to well-lit, populated areas. Koramangala and Indiranagar are safe nightlife zones."
+  },
+  {
+    "destination": "bangalore",
+    "country": "india",
+    "category": "packing",
+    "content": "Bangalore's weather is mild year-round (15-35°C). Pack layers as mornings and evenings can be cool. Rain is common from June to November — bring a light rain jacket. Comfortable walking shoes are essential for exploring the gardens and neighborhoods. Smart casuals work for most restaurants."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "transit",
+    "content": "Kerala is best explored by a combination of trains, buses, and houseboats. The Kochi Metro is convenient for Ernakulam city. For the famous Alleppey backwater cruise, book a houseboat through Kerala Tourism (KTDC) to avoid overpricing. Auto-rickshaws in Fort Kochi use meters — insist on it."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "food",
+    "content": "Kerala cuisine centers around coconut, seafood, and rice. Must-try dishes include Kerala fish curry (meen curry), appam with stew, puttu and kadala curry, and the legendary Kerala sadya (banana leaf feast). Try fresh toddy (palm wine) at a local toddy shop — it's a unique Kerala experience."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "customs",
+    "content": "Many Kerala temples have strict dress codes: men must wear mundu (a white cloth wrapped around the waist) and women should wear sarees or modest clothing. Non-Hindus may not be allowed inside the sanctum at some temples. The Padmanabhaswamy Temple in Thiruvananthapuram enforces this strictly."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "safety",
+    "content": "During monsoon (June-August), Kerala can experience heavy flooding. Check weather warnings before visiting hill stations like Munnar. Leeches are common on trekking trails in monsoon — wear full-length trousers and carry salt. Beach currents at Kovalam and Varkala can be strong."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "packing",
+    "content": "Kerala is tropical — pack light, breathable clothes. Mosquito repellent is essential, especially in the backwaters and forests. Bring waterproof bags for houseboat trips. For Munnar hill station, pack warm layers as temperatures can drop to 5°C at night. Carry reef-safe sunscreen for beach visits."
+  },
+  {
+    "destination": "kerala",
+    "country": "india",
+    "category": "customs",
+    "content": "Ayurvedic spas and treatments are a highlight of Kerala tourism. Book treatments at certified centers (look for the Kerala government green leaf certification). A minimum 7-day course is recommended for genuine results. Do not consume alcohol during Ayurvedic treatment periods."
+  },
+  {
+    "destination": "udaipur",
+    "country": "india",
+    "category": "customs",
+    "content": "Udaipur's City Palace is one of the largest palace complexes in Rajasthan. Different sections have separate tickets. Photography is allowed in most areas except the Crystal Gallery. Boat rides on Lake Pichola offer stunning sunset views of the palace — book the RTDC government boat to avoid tourist traps."
+  },
+  {
+    "destination": "udaipur",
+    "country": "india",
+    "category": "transit",
+    "content": "Udaipur is a compact city best explored on foot or by auto-rickshaw. The Old City area around Lake Pichola has narrow lanes where cars cannot go. For Kumbhalgarh Fort (80 km) and Ranakpur Jain Temple (90 km), hire a full-day taxi. The Udaipur-Jodhpur road trip is scenic and takes about 5 hours."
+  },
+  {
+    "destination": "udaipur",
+    "country": "india",
+    "category": "food",
+    "content": "Udaipur offers excellent Rajasthani and Mewari cuisine. Try dal baati churma at Natraj Dining Hall, and thali meals at Jagat Niwas Palace restaurant overlooking the lake. Rooftop restaurants like Ambrai and Upre offer Lake Pichola views with dinner. Local specialties include gatte ki sabzi and kachori."
+  },
+  {
+    "destination": "udaipur",
+    "country": "india",
+    "category": "safety",
+    "content": "Udaipur is one of the safest cities in India for tourists. However, monsoon season (July-September) can make roads slippery and certain ghats near the lake unsafe. Beware of commission agents near the bus stand who will try to redirect you to specific hotels."
+  },
+  {
+    "destination": "udaipur",
+    "country": "india",
+    "category": "packing",
+    "content": "Udaipur has a semi-arid climate. Summers (April-June) are very hot — pack sunscreen, a hat, and light cotton clothes. Winters are pleasant but nights can be cold (5-10°C). Comfortable walking shoes are a must for exploring the hilly terrain and palace courtyards."
+  },
+  {
+    "destination": "varanasi",
+    "country": "india",
+    "category": "customs",
+    "content": "Varanasi is one of the holiest cities in Hinduism. The evening Ganga Aarti at Dashashwamedh Ghat is a must-see — arrive 30 minutes early for a good spot. Photography during cremation ceremonies at Manikarnika Ghat is strictly prohibited and deeply disrespectful. Always ask permission before photographing locals."
+  },
+  {
+    "destination": "varanasi",
+    "country": "india",
+    "category": "transit",
+    "content": "The narrow lanes (galis) of Varanasi's old city are only accessible on foot or by cycle-rickshaw. Start your morning with a sunrise boat ride on the Ganges — negotiate the price before boarding (INR 200-400 for a shared boat). The Varanasi-Sarnath distance is 10 km; auto-rickshaws charge around INR 200."
+  },
+  {
+    "destination": "varanasi",
+    "country": "india",
+    "category": "food",
+    "content": "Varanasi is famous for its street food. Try the iconic kachori-sabzi at Ram Bhandar near Godowlia, the creamy lassi at Blue Lassi Shop (since 1925), and tamatar chaat on the ghats. Banarasi paan is a must-try experience. Many restaurants near the ghats serve vegetarian-only food."
+  },
+  {
+    "destination": "varanasi",
+    "country": "india",
+    "category": "safety",
+    "content": "The ghat steps can be very slippery, especially during and after rain. Wear shoes with good grip. Beware of self-appointed guides who will follow you and demand payment. At crowded ghats, keep your valuables secure. Avoid swimming in the Ganges — the water quality is poor for bathing."
+  },
+  {
+    "destination": "varanasi",
+    "country": "india",
+    "category": "packing",
+    "content": "Pack modest, loose-fitting clothing for temple visits. Slip-on shoes are practical since you'll be removing them frequently. Carry a small daypack for essentials while navigating the narrow lanes. Mosquito repellent is essential, especially near the ghats in the evening."
+  },
+  {
+    "destination": "jaisalmer",
+    "country": "india",
+    "category": "customs",
+    "content": "The Jaisalmer Fort is a living fort — people still reside inside it. Respect residents' privacy and property. At the Jain temples inside the fort, shoes must be removed and leather items are not allowed. The Desert Festival (usually in February) features camel races, folk music, and turban-tying competitions."
+  },
+  {
+    "destination": "jaisalmer",
+    "country": "india",
+    "category": "transit",
+    "content": "Jaisalmer is remote — the nearest major airport is Jodhpur (285 km). The overnight train from Jodhpur is a scenic option. Within Jaisalmer, walking is the best way to explore the fort and old city. For desert safaris and Sam Sand Dunes (42 km), hire a jeep or join a group tour."
+  },
+  {
+    "destination": "jaisalmer",
+    "country": "india",
+    "category": "food",
+    "content": "Jaisalmer offers authentic Rajasthani desert cuisine. Try ker sangri (a desert bean and berry dish), murgh-e-subz (Rajasthani chicken), and bajra roti with lehsun chutney. Suryagarh Hotel has an excellent dining experience. Chai stalls on every corner serve masala chai with desert herbs."
+  },
+  {
+    "destination": "jaisalmer",
+    "country": "india",
+    "category": "packing",
+    "content": "The Thar Desert has extreme temperature swings — days can hit 45°C while nights in winter drop to near-freezing. Bring layers, a warm jacket for desert camping, and closed-toe shoes for dune walks. A headscarf protects from sun and sand. Carry extra water bottles for desert excursions."
+  },
+  {
+    "destination": "rishikesh",
+    "country": "india",
+    "category": "customs",
+    "content": "Rishikesh is considered a holy city — alcohol and non-vegetarian food are officially banned in the town (though some outskirts restaurants serve them quietly). At ashrams and temples, dress modestly. The Ganga Aarti at Triveni Ghat every evening is a serene experience — arrive 15 minutes early."
+  },
+  {
+    "destination": "rishikesh",
+    "country": "india",
+    "category": "transit",
+    "content": "The nearest airport is Dehradun's Jolly Grant Airport (35 km). Shared taxis and buses connect the airport to Rishikesh. Within town, walking and shared auto-rickshaws are the main transport. The Lakshman Jhula and Ram Jhula suspension bridges (pedestrian-only) connect the two sides of the Ganges."
+  },
+  {
+    "destination": "rishikesh",
+    "country": "india",
+    "category": "food",
+    "content": "Rishikesh is entirely vegetarian. Popular restaurants include Chotiwala (two branches face each other near Ram Jhula — both claim to be original), Little Buddha Cafe for Israeli and continental food, and Freedom Cafe for organic meals. Fresh fruit juices and lassi are available everywhere along the ghats."
+  },
+  {
+    "destination": "rishikesh",
+    "country": "india",
+    "category": "safety",
+    "content": "For white-water rafting (the top adventure activity), book only through operators registered with the Uttarakhand Tourism Department. Rafting is seasonal (September-June, closed during monsoon). Bungee jumping at Jumpin Heights is India's highest — book online for confirmed slots. Wear life jackets at all water activities."
+  },
+  {
+    "destination": "rishikesh",
+    "country": "india",
+    "category": "packing",
+    "content": "Pack quick-dry clothing for rafting and adventure activities. Comfortable trekking shoes are essential for the hilly terrain. Evenings by the Ganges can be cool year-round — carry a light fleece. Bring a waterproof bag for phone and valuables during water sports. Yoga-appropriate loose clothing is handy."
+  },
+  {
+    "destination": "shimla",
+    "country": "india",
+    "category": "transit",
+    "content": "The UNESCO-listed Shimla toy train (Kalka-Shimla Railway) is a heritage experience — book well in advance on IRCTC. The road from Chandigarh to Shimla (112 km) takes 3-4 hours and can be longer on weekends. Within Shimla, walking is the primary mode — most of the Mall Road and Ridge are vehicle-free zones."
+  },
+  {
+    "destination": "shimla",
+    "country": "india",
+    "category": "food",
+    "content": "Try the local Himachali cuisine including siddu (steamed bread with filling), madra (chickpea curry), and trout fish. The Indian Coffee House on the Mall Road is an iconic institution. Cafe Simla Times offers a cozy atmosphere with Himalayan views. Pack some locally made fruit preserves as souvenirs."
+  },
+  {
+    "destination": "shimla",
+    "country": "india",
+    "category": "packing",
+    "content": "Shimla is a hill station at 2,200m altitude. Summers (April-June) are pleasant but evenings require a light jacket. Winters (December-February) see snowfall — pack heavy woolens, thermal inners, waterproof boots, and gloves. Walking shoes with good grip are essential for the steep terrain year-round."
+  },
+  {
+    "destination": "shimla",
+    "country": "india",
+    "category": "safety",
+    "content": "During monsoon (July-September), landslides can block the Chandigarh-Shimla highway. Check road conditions before traveling. In winter, roads can be icy — carry chains for your vehicle. The steep pathways in Shimla can be slippery after rain or snow. Altitude sickness is rare but stay hydrated."
+  }
+]

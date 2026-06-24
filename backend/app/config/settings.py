@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     port: int = 8010
 
     # Model Configuration
-    model_name: str = "llama-3.3-70b-versatile"
+    model_name: str = "llama-3.1-8b-instant"
     temperature: float = 0.1
     max_tokens: Optional[int] = None
 
@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # MCP (Model Context Protocol) Configuration
     mcp_enabled: bool = False
     mcp_server_url: str = "http://mcp-server:9000/sse"
+
+    # Pinecone (Vector Search for RAG)
+    pinecone_api_key: Optional[str] = None
+    pinecone_index_name: str = "tbuddy-travel-tips"
 
     # Streaming Configuration
     streaming_enabled: bool = True

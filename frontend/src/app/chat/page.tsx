@@ -22,6 +22,11 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
+  MessageCircle,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  BookOpen,
 } from "lucide-react";
 
 // ── Leaflet map — dynamically imported (no SSR) because Leaflet needs window ──
@@ -56,7 +61,7 @@ const HyperspeedBackground = () => {
 };
 
 // ── Chat message ──────────────────────────────────────────────────────────────
-const ChatMessage = ({ message, isUser }) => (
+const ChatMessage = ({ message, isUser }: { message: any; isUser: boolean }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -82,7 +87,7 @@ const ChatMessage = ({ message, isUser }) => (
 );
 
 // ── Streaming indicator ───────────────────────────────────────────────────────
-const StreamingIndicator = ({ message }) => (
+const StreamingIndicator = ({ message }: { message: string }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -102,8 +107,8 @@ const StreamingIndicator = ({ message }) => (
 );
 
 // ── Agent status card ─────────────────────────────────────────────────────────
-const AgentStatusCard = ({ agent, status }) => {
-  const getStatusConfig = (s) => {
+const AgentStatusCard = ({ agent, status }: { agent: string; status: string }) => {
+  const getStatusConfig = (s: string) => {
     switch (s) {
       case "completed":
         return { color: "from-emerald-500/20 to-green-500/20 border-emerald-500/40", textColor: "text-emerald-300", icon: <CheckCircle className="w-5 h-5" /> };
@@ -116,7 +121,7 @@ const AgentStatusCard = ({ agent, status }) => {
     }
   };
 
-  const agentConfig = {
+  const agentConfig: Record<string, { icon: string; label: string }> = {
     weather:      { icon: "🌤️", label: "Weather" },
     events:       { icon: "🎉", label: "Events" },
     maps:         { icon: "🗺️", label: "Routes" },
@@ -158,10 +163,10 @@ const AgentStatusCard = ({ agent, status }) => {
 };
 
 // ── Weather card ──────────────────────────────────────────────────────────────
-const WeatherCard = ({ data }) => {
+const WeatherCard = ({ data }: { data: any }) => {
   if (!data || !data.weather_forecast) return null;
 
-  const getAQILevel = (aqi) => {
+  const getAQILevel = (aqi: number) => {
     if (aqi <= 1) return { label: "Good",      color: "text-emerald-400", bg: "bg-emerald-500/20" };
     if (aqi <= 2) return { label: "Fair",      color: "text-green-400",   bg: "bg-green-500/20" };
     if (aqi <= 3) return { label: "Moderate",  color: "text-yellow-400",  bg: "bg-yellow-500/20" };
@@ -187,7 +192,7 @@ const WeatherCard = ({ data }) => {
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {data.weather_forecast.map((day, idx) => {
+          {data.weather_forecast.map((day: any, idx: number) => {
             const aqiInfo = getAQILevel(day.air_quality?.aqi || 0);
             return (
               <motion.div key={idx} whileHover={{ scale: 1.02 }}
@@ -229,11 +234,11 @@ const WeatherCard = ({ data }) => {
 };
 
 // ── Events card ───────────────────────────────────────────────────────────────
-const EventsCard = ({ data }) => {
+const EventsCard = ({ data }: { data: any }) => {
   if (!data || !data.events || data.events.length === 0) return null;
 
-  const getCategoryColor = (category) => {
-    const colors = {
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
       music:   "from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-300",
       arts:    "from-blue-500/20 to-cyan-500/20 border-blue-500/30 text-blue-300",
       food:    "from-orange-500/20 to-red-500/20 border-orange-500/30 text-orange-300",
@@ -260,7 +265,7 @@ const EventsCard = ({ data }) => {
           </div>
         )}
         <div className="grid grid-cols-1 gap-4">
-          {data.events.slice(0, 6).map((event, idx) => (
+          {data.events.slice(0, 6).map((event: any, idx: number) => (
             <motion.div key={idx} whileHover={{ scale: 1.02, x: 5 }}
               className={`p-5 rounded-2xl bg-gradient-to-br ${getCategoryColor(event.category)} border backdrop-blur-xl`}>
               <div className="flex items-start justify-between mb-3">
@@ -321,10 +326,10 @@ const EventsCard = ({ data }) => {
 };
 
 // ── Route card ────────────────────────────────────────────────────────────────
-const RouteCard = ({ data }) => {
+const RouteCard = ({ data }: { data: any }) => {
   if (!data || !data.primary_route) return null;
 
-  const getModeIcon = (mode) => {
+  const getModeIcon = (mode: string) => {
     switch (mode) {
       case "driving":  return <Car className="w-6 h-6" />;
       case "walking":  return <Users className="w-6 h-6" />;
@@ -382,8 +387,8 @@ const RouteCard = ({ data }) => {
         {data.alternative_routes && (
           <div className="space-y-3">
             <h4 className="text-white font-bold mb-3">Alternative Options</h4>
-            {Object.entries(data.alternative_routes).map(([mode, route]) => (
-              <motion.div key={mode} whileHover={{ scale: 1.02 }}
+            {Object.entries(data.alternative_routes as Record<string, any>).map(([mode, route]: [string, any], idx: number) => (
+              <motion.div key={mode || idx} whileHover={{ scale: 1.02 }}
                 className="p-4 bg-black/20 rounded-xl border border-emerald-500/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -406,7 +411,7 @@ const RouteCard = ({ data }) => {
 };
 
 // ── Budget card ───────────────────────────────────────────────────────────────
-const BudgetCard = ({ data }) => {
+const BudgetCard = ({ data }: { data: any }) => {
   if (!data || !data.budget_breakdown) return null;
   const breakdown = data.budget_breakdown;
 
@@ -477,7 +482,7 @@ const BudgetCard = ({ data }) => {
           <div className="mt-6">
             <h4 className="text-white font-bold mb-3">💡 Money-Saving Tips</h4>
             <div className="space-y-2">
-              {data.recommendations.map((tip, idx) => (
+              {data.recommendations.map((tip: any, idx: number) => (
                 <div key={idx} className="flex items-start gap-2 p-3 bg-black/20 rounded-xl border border-amber-500/10">
                   <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-amber-100">{tip}</p>
@@ -570,7 +575,7 @@ const ItineraryCard = ({
           </div>
         )}
         <div className="space-y-6">
-          {data.itinerary_days.map((day, dayIdx) => (
+          {data.itinerary_days.map((day: any, dayIdx: number) => (
             <motion.div key={dayIdx}
               initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: dayIdx * 0.1 }}
@@ -602,7 +607,7 @@ const ItineraryCard = ({
                 </div>
               )}
               <div className="space-y-2">
-                {day.activities.map((activity, actIdx) => {
+                {day.activities.map((activity: any, actIdx: number) => {
                   const activityId = `day_${day.day}_act_${actIdx}`;
                   const isThisSwapping = swappingActivityId === activityId;
                   return (
@@ -645,7 +650,7 @@ const ItineraryCard = ({
                               {swapAlternatives.length === 0 ? (
                                 <p className="text-xs text-zinc-500">No alternatives found.</p>
                               ) : (
-                                swapAlternatives.map((alt, idx) => (
+                                swapAlternatives.map((alt: any, idx: number) => (
                                   <div key={idx} className="p-3 bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800 rounded-lg flex justify-between items-center gap-4 transition-all">
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2">
@@ -685,7 +690,7 @@ const ItineraryCard = ({
               <div className="mb-3">
                 <p className="text-violet-200 text-sm mb-2">Recommended Trains:</p>
                 <div className="space-y-2">
-                  {data.transport_details.recommended_trains.map((train, idx) => (
+                  {data.transport_details.recommended_trains.map((train: any, idx: number) => (
                     <div key={idx} className="p-2 bg-violet-500/10 rounded-lg">
                       <p className="text-white text-sm">{train}</p>
                     </div>
@@ -704,7 +709,7 @@ const ItineraryCard = ({
           <div className="mt-6">
             <h4 className="text-white font-bold mb-3">💡 Pro Tips</h4>
             <div className="space-y-2">
-              {data.key_tips.map((tip, idx) => (
+              {data.key_tips.map((tip: any, idx: number) => (
                 <div key={idx} className="flex items-start gap-2 p-3 bg-black/20 rounded-xl border border-violet-500/10">
                   <Star className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-violet-100">{tip}</p>
@@ -713,6 +718,217 @@ const ItineraryCard = ({
             </div>
           </div>
         )}
+        {data.local_guidelines && data.local_guidelines.length > 0 && (
+          <div className="mt-6 p-5 bg-gradient-to-br from-teal-900/30 to-cyan-900/30 rounded-2xl border border-teal-500/30">
+            <h4 className="text-white font-bold mb-3 flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-teal-300" /> Local Guidelines
+            </h4>
+            <p className="text-teal-200/60 text-xs mb-3">Verified travel tips from our knowledge base</p>
+            <div className="space-y-2">
+              {data.local_guidelines
+                .replace(/^VERIFIED LOCAL GUIDELINES:\n/, "")
+                .split("\n")
+                .filter((line: string) => line.trim())
+                .map((tip: string, idx: number) => (
+                  <div key={idx} className="flex items-start gap-2 p-3 bg-black/20 rounded-xl border border-teal-500/10">
+                    <CheckCircle className="w-4 h-4 text-teal-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-teal-100">{tip.replace(/^[•\-]\s*/, "")}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+// ── Trip Chat Panel ───────────────────────────────────────────────────────────
+const TripChatPanel = ({ sessionId }: { sessionId: string | null }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  if (!sessionId) return null;
+
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || isSending) return;
+
+    const userMsg = chatInput.trim();
+    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatInput("");
+    setIsSending(true);
+
+    try {
+      const res = await fetch(
+        `http://localhost:8010/api/v2/orchestrator/session/${sessionId}/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMsg }),
+        }
+      );
+      if (!res.ok) throw new Error("Chat request failed");
+      const data = await res.json();
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply },
+      ]);
+    } catch (err) {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I couldn't process that. Please try again." },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-6"
+    >
+      <div className="rounded-3xl bg-gradient-to-br from-indigo-900/40 to-violet-900/40 border border-indigo-500/30 backdrop-blur-xl shadow-2xl overflow-hidden">
+        {/* Header / Toggle */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/20 rounded-xl">
+              <MessageCircle className="w-6 h-6 text-indigo-300" />
+            </div>
+            <div className="text-left">
+              <h3 className="text-lg font-bold text-white">Ask About Your Trip</h3>
+              <p className="text-indigo-200/60 text-xs">
+                Questions about dress codes, transit, food, safety & more
+              </p>
+            </div>
+          </div>
+          {isOpen ? (
+            <ChevronUp className="w-5 h-5 text-indigo-300" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-indigo-300" />
+          )}
+        </button>
+
+        {/* Chat body */}
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="border-t border-indigo-500/20">
+                {/* Messages */}
+                <div className="max-h-80 overflow-y-auto overscroll-contain p-4 space-y-3">
+                  {chatMessages.length === 0 && (
+                    <div className="text-center py-8">
+                      <MessageCircle className="w-10 h-10 text-indigo-400/30 mx-auto mb-3" />
+                      <p className="text-indigo-200/40 text-sm">
+                        Ask anything about your planned trip!
+                      </p>
+                      <div className="flex flex-wrap justify-center gap-2 mt-4">
+                        {[
+                          "What should I wear to the temple?",
+                          "Best street food spots?",
+                          "How do I get around?",
+                        ].map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => {
+                              setChatInput(q);
+                            }}
+                            className="px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-xs text-indigo-200 hover:bg-indigo-500/20 transition-colors"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {chatMessages.map((msg, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                          msg.role === "user"
+                            ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white"
+                            : "bg-black/30 border border-indigo-500/20 text-indigo-100"
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap leading-relaxed">
+                          {msg.content}
+                        </p>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {isSending && (
+                    <div className="flex justify-start">
+                      <div className="p-3 rounded-2xl bg-black/30 border border-indigo-500/20">
+                        <div className="flex items-center gap-2">
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{
+                              duration: 1,
+                              repeat: Infinity,
+                              ease: "linear",
+                            }}
+                            className="w-4 h-4 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full"
+                          />
+                          <span className="text-xs text-indigo-200">
+                            Thinking...
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="p-4 border-t border-indigo-500/20">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && handleSendChat()
+                      }
+                      placeholder="Ask about your trip..."
+                      disabled={isSending}
+                      className="flex-1 bg-black/30 border border-indigo-500/20 rounded-xl px-4 py-2.5 text-sm text-indigo-100 placeholder-indigo-300/30 focus:outline-none focus:border-indigo-400/50 focus:ring-1 focus:ring-indigo-400/20 disabled:opacity-50 transition-all"
+                    />
+                    <button
+                      onClick={handleSendChat}
+                      disabled={!chatInput.trim() || isSending}
+                      className="p-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-zinc-800 disabled:to-zinc-700 text-white rounded-xl transition-all disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );
@@ -722,27 +938,27 @@ const ItineraryCard = ({
 // MAIN PAGE
 // ═════════════════════════════════════════════════════════════════════════════
 const TravelChatPage = () => {
-  const [messages,         setMessages]         = useState([]);
+  const [messages,         setMessages]         = useState<any[]>([]);
   const [input,            setInput]            = useState("");
   const [isConnected,      setIsConnected]      = useState(false);
-  const [sessionId,        setSessionId]        = useState(null);
+  const [sessionId,        setSessionId]        = useState<string | null>(null);
   const [isProcessing,     setIsProcessing]     = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
-  const [agentStatuses,    setAgentStatuses]    = useState({});
+  const [agentStatuses,    setAgentStatuses]    = useState<Record<string, string>>({});
   const [progressPercent,  setProgressPercent]  = useState(0);
-  const [results,          setResults]          = useState({});
+  const [results,          setResults]          = useState<any>({});
   const [preferenceWeights, setPreferenceWeights] = useState<Record<string, number> | null>(null);
   const [showPreferencePoll, setShowPreferencePoll] = useState(false);
 
-  const wsRef          = useRef(null);
-  const messagesEndRef = useRef(null);
+  const wsRef          = useRef<any>(null);
+  const messagesEndRef = useRef<any>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   useEffect(() => { scrollToBottom(); }, [messages, streamingMessage, agentStatuses]);
 
   // ── WebSocket connection ──────────────────────────────────────────────────
-  const connectWebSocket = (sid) => {
+  const connectWebSocket = (sid: string) => {
     return new Promise((resolve, reject) => {
       if (wsRef.current) wsRef.current.close();
 
@@ -758,7 +974,7 @@ const TravelChatPage = () => {
             case "connected":
               setStreamingMessage("Connected to travel planning system...");
               if (update.context) {
-                setMessages(prev => [...prev, {
+                setMessages((prev: any[]) => [...prev, {
                   role: "assistant",
                   content: `Continuing your trip to ${update.context.destination}`,
                   timestamp: update.timestamp,
@@ -767,7 +983,7 @@ const TravelChatPage = () => {
               break;
 
             case "agent_start":
-              setAgentStatuses(prev => ({ ...prev, [update.agent]: "processing" }));
+              setAgentStatuses((prev: any) => ({ ...prev, [update.agent]: "processing" }));
               setStreamingMessage(update.message);
               break;
 
@@ -778,13 +994,13 @@ const TravelChatPage = () => {
 
             case "agent_update":
               if (update.agent) {
-                setAgentStatuses(prev => ({ ...prev, [update.agent]: "completed" }));
+                setAgentStatuses((prev: any) => ({ ...prev, [update.agent]: "completed" }));
               }
               setStreamingMessage(update.message);
               if (update.data) {
-                setResults(prev => ({ ...prev, ...update.data }));
+                setResults((prev: any) => ({ ...prev, ...update.data }));
                 if (update.data.itinerary_data) {
-                  setAgentStatuses(prev => ({ ...prev, itinerary: "completed" }));
+                  setAgentStatuses((prev: any) => ({ ...prev, itinerary: "completed" }));
                 }
               }
               break;
@@ -794,14 +1010,14 @@ const TravelChatPage = () => {
               setIsProcessing(false);
               setProgressPercent(100);
 
-              const resultSummary = [];
+              const resultSummary: string[] = [];
               if (update.data?.weather_data)   resultSummary.push("Weather");
               if (update.data?.events_data)    resultSummary.push("Events");
               if (update.data?.maps_data)      resultSummary.push("Routes");
               if (update.data?.budget_data)    resultSummary.push("Budget");
               if (update.data?.itinerary_data) resultSummary.push("Itinerary");
 
-              setMessages(prev => [...prev, {
+               setMessages((prev: any[]) => [...prev, {
                 role: "assistant",
                 content: `✨ Travel plan complete! Generated: ${resultSummary.join(", ")}`,
                 timestamp: update.timestamp,
@@ -813,9 +1029,9 @@ const TravelChatPage = () => {
             case "error":
               setStreamingMessage("");
               if (update.agent) {
-                setAgentStatuses(prev => ({ ...prev, [update.agent]: "failed" }));
+                setAgentStatuses((prev: any) => ({ ...prev, [update.agent]: "failed" }));
               }
-              setMessages(prev => [...prev, {
+              setMessages((prev: any[]) => [...prev, {
                 role: "assistant",
                 content: `❌ Error: ${update.message}`,
                 timestamp: update.timestamp,
@@ -843,7 +1059,7 @@ const TravelChatPage = () => {
     if (!input.trim() || isProcessing) return;
 
     const userMessage = { role: "user", content: input, timestamp: new Date().toISOString() };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev: any[]) => [...prev, userMessage]);
     const userInput = input;
     setInput("");
     setIsProcessing(true);
@@ -877,8 +1093,8 @@ const TravelChatPage = () => {
       }
 
       setStreamingMessage("Workflow started - processing agents...");
-    } catch (error) {
-      setMessages(prev => [...prev, {
+    } catch (error: any) {
+      setMessages((prev: any[]) => [...prev, {
         role: "assistant",
         content: `❌ Failed to process your request: ${error.message}`,
         timestamp: new Date().toISOString(),
@@ -906,202 +1122,180 @@ const TravelChatPage = () => {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen w-screen overflow-x-hidden bg-black relative">
+    <div className="h-screen w-screen overflow-hidden bg-black relative">
       <HyperspeedBackground />
       <div className="bg-gradient-to-b from-black/80 via-black/60 to-black/80 inset-0 absolute" />
 
-      <div className="relative z-10 flex flex-col h-screen">
-
-        {/* ── Header ───────────────────────────────────────────────────── */}
-        <div className="sticky top-0 backdrop-blur-2xl bg-black/70 border-b border-violet-500/20 px-6 py-5 shadow-2xl">
-          <div className="max-w-6xl mx-auto flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-400 via-fuchsia-400 to-purple-400 bg-clip-text text-transparent">
-                Travel Intelligence
-              </h1>
-              <p className="text-sm text-violet-300/60 mt-1 flex items-center gap-2">
-                {sessionId ? (
-                  <>
-                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-pulse" />
-                    Session: {sessionId.slice(0, 15)}...
-                  </>
-                ) : (
-                  "Ready to plan your journey"
-                )}
-                {isConnected && (
-                  <span className="ml-2 text-emerald-400 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                    Live
-                  </span>
-                )}
-              </p>
-            </div>
-            <button
-              onClick={handleNewConversation}
-              className="px-6 py-3 bg-gradient-to-r from-violet-600/20 to-fuchsia-600/20 hover:from-violet-600/30 hover:to-fuchsia-600/30 border border-violet-500/30 rounded-2xl text-violet-200 transition-all backdrop-blur-xl font-medium"
-            >
-              New Journey
-            </button>
-          </div>
-        </div>
-
-        {/* ── Messages area ─────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-6 py-8">
-          <div className="max-w-5xl mx-auto">
-            <AnimatePresence>
-
-              {/* Pre-Trip Preference Poll — shown before any messages */}
-              {messages.length === 0 && !isProcessing && (
-                showPreferencePoll ? (
-                  <PreferencePoll
-                    onSubmit={(weights) => {
-                      setPreferenceWeights(weights);
-                      setShowPreferencePoll(false);
-                    }}
-                    onSkip={() => setShowPreferencePoll(false)}
-                  />
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-6 flex justify-center"
-                  >
-                    {preferenceWeights ? (
-                      <div className="flex items-center gap-3 px-5 py-2.5 bg-violet-500/10 border border-violet-500/25 rounded-full backdrop-blur-md">
-                        <span className="text-emerald-400 text-sm">✅ Preferences applied</span>
-                        <button
-                          onClick={() => setShowPreferencePoll(true)}
-                          className="text-xs text-violet-300 hover:text-violet-100 underline underline-offset-2 transition-colors"
-                        >
-                          Edit
+      <div className="relative z-10 flex flex-col h-full pt-16">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Left Column: Results Panel (takes 2/3 width on desktop) */}
+          <div className="flex-1 lg:w-2/3 h-full overflow-y-auto p-6 lg:p-8 scrollbar-none">
+            <div className="max-w-4xl mx-auto">
+              <AnimatePresence>
+                {/* Pre-Trip Preference Poll */}
+                {messages.length === 0 && !isProcessing && (
+                  showPreferencePoll ? (
+                    <PreferencePoll
+                      onSubmit={(weights) => {
+                        setPreferenceWeights(weights);
+                        setShowPreferencePoll(false);
+                      }}
+                      onSkip={() => setShowPreferencePoll(false)}
+                    />
+                  ) : (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex justify-center">
+                      {preferenceWeights ? (
+                        <div className="flex items-center gap-3 px-5 py-2.5 bg-violet-500/10 border border-violet-500/25 rounded-full backdrop-blur-md">
+                          <span className="text-emerald-400 text-sm">✅ Preferences applied</span>
+                          <button onClick={() => setShowPreferencePoll(true)} className="text-xs text-violet-300 hover:text-violet-100 underline underline-offset-2 transition-colors">Edit</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setShowPreferencePoll(true)} className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-full text-sm text-zinc-400 hover:text-zinc-200 hover:border-violet-500/30 transition-all backdrop-blur-md">
+                          <span>⚖️</span> Set travel preferences
                         </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setShowPreferencePoll(true)}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-full text-sm text-zinc-400 hover:text-zinc-200 hover:border-violet-500/30 transition-all backdrop-blur-md"
-                      >
-                        <span>⚖️</span> Set travel preferences
-                      </button>
-                    )}
-                  </motion.div>
-                )
-              )}
+                      )}
+                    </motion.div>
+                  )
+                )}
 
-              {/* Chat messages */}
+                {/* Progress bar */}
+                {isProcessing && progressPercent > 0 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6">
+                    <div className="w-full bg-zinc-800/50 rounded-full h-3 overflow-hidden backdrop-blur-xl border border-violet-500/20">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progressPercent}%` }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                        className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-purple-500 rounded-full shadow-lg shadow-violet-500/50"
+                      />
+                    </div>
+                    <p className="text-xs text-violet-300 mt-2 text-center font-medium">
+                      {progressPercent}% complete
+                    </p>
+                  </motion.div>
+                )}
+
+                {/* Agent status grid */}
+                {Object.keys(agentStatuses).length > 0 && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                    {Object.entries(agentStatuses).map(([agent, status], idx) => (
+                      <AgentStatusCard key={agent || idx} agent={agent} status={status} />
+                    ))}
+                  </motion.div>
+                )}
+
+                {/* Result cards */}
+                {results.weather_data   && <WeatherCard   data={results.weather_data} />}
+                {results.events_data    && <EventsCard    data={results.events_data} />}
+                {results.maps_data && (
+                  <>
+                    <RouteCard data={results.maps_data} />
+                    <TripMap
+                      mapsData={results.maps_data}
+                      itineraryDays={results.itinerary_data?.itinerary_days}
+                      origin={results.maps_data.origin}
+                      destination={results.maps_data.destination}
+                      routeOptimization={results.route_optimization}
+                    />
+                  </>
+                )}
+                {results.budget_data    && <BudgetCard    data={results.budget_data} />}
+                {results.itinerary_data && (
+                  <ItineraryCard
+                    data={results.itinerary_data}
+                    sessionId={sessionId}
+                    onUpdateResults={(updatedItinerary, updatedRouteOpt) => {
+                      setResults((prev: any) => ({
+                        ...prev,
+                        itinerary_data: updatedItinerary,
+                        route_optimization: updatedRouteOpt
+                      }));
+                    }}
+                  />
+                )}
+
+                {!isProcessing && !results.itinerary_data && (
+                  <div className="flex flex-col items-center justify-center py-20 text-center text-zinc-500">
+                    <span className="text-5xl mb-4">🔮</span>
+                    <p className="text-lg font-medium text-zinc-400">Your Travel Intelligence Workspace</p>
+                    <p className="text-sm max-w-sm mt-2">Start a conversation with the chatbot on the right to plan your custom travel itinerary and generate details.</p>
+                  </div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Right Column: Chatbot Conversation Pane (takes 1/3 width on desktop) */}
+          <div className="lg:w-1/3 h-full border-t lg:border-t-0 lg:border-l border-zinc-800/60 bg-zinc-950/20 backdrop-blur-md flex flex-col overflow-hidden">
+            {/* Chat Header */}
+            <div className="px-6 py-4 border-b border-zinc-850 flex justify-between items-center bg-black/40">
+              <div>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-violet-400 via-fuchsia-400 to-purple-400 bg-clip-text text-transparent">
+                  Travel Intelligence Chat
+                </h1>
+                <p className="text-[11px] text-violet-300/60 mt-0.5 flex items-center gap-1.5">
+                  {sessionId ? `Session: ${sessionId.slice(0, 15)}...` : "Ready to plan your journey"}
+                  {isConnected && <span className="text-emerald-400 animate-pulse">• Live</span>}
+                </p>
+              </div>
+              <button
+                onClick={handleNewConversation}
+                className="px-3 py-1.5 bg-violet-600/20 hover:bg-violet-600/30 border border-violet-500/30 rounded-xl text-xs text-violet-200 transition-all font-medium"
+              >
+                New Journey
+              </button>
+            </div>
+
+            {/* Chat History Flow */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+              {messages.length === 0 && !isProcessing && (
+                <div className="text-center py-12">
+                  <MessageCircle className="w-12 h-12 text-violet-400/30 mx-auto mb-4" />
+                  <p className="text-violet-200/50 text-sm font-medium">
+                    Ask TBuddy to plan your trip!
+                  </p>
+                  <p className="text-zinc-500 text-xs mt-1 max-w-xs mx-auto">
+                    Type a query below specifying destination, origin, dates, and budget.
+                  </p>
+                </div>
+              )}
               {messages.map((msg, idx) => (
                 <ChatMessage key={idx} message={msg} isUser={msg.role === "user"} />
               ))}
-
-              {/* Streaming indicator */}
               {isProcessing && streamingMessage && (
                 <StreamingIndicator message={streamingMessage} />
               )}
+              <div ref={messagesEndRef} />
+            </div>
 
-              {/* Progress bar */}
-              {isProcessing && progressPercent > 0 && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-6">
-                  <div className="w-full bg-zinc-800/50 rounded-full h-3 overflow-hidden backdrop-blur-xl border border-violet-500/20">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${progressPercent}%` }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
-                      className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-purple-500 rounded-full shadow-lg shadow-violet-500/50"
-                    />
-                  </div>
-                  <p className="text-xs text-violet-300 mt-2 text-center font-medium">
-                    {progressPercent}% complete
-                  </p>
-                </motion.div>
-              )}
-
-              {/* Agent status grid */}
-              {Object.keys(agentStatuses).length > 0 && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                  {Object.entries(agentStatuses).map(([agent, status]) => (
-                    <AgentStatusCard key={agent} agent={agent} status={status} />
-                  ))}
-                </motion.div>
-              )}
-
-              {/* ── Result cards ─────────────────────────────────────────── */}
-              {results.weather_data   && <WeatherCard   data={results.weather_data} />}
-              {results.events_data    && <EventsCard    data={results.events_data} />}
-
-              {/* Route info + interactive Leaflet map */}
-              {results.maps_data && (
-                <>
-                  <RouteCard data={results.maps_data} />
-                  <TripMap
-                    mapsData={results.maps_data}
-                    itineraryDays={results.itinerary_data?.itinerary_days}
-                    origin={results.maps_data.origin}
-                    destination={results.maps_data.destination}
-                    routeOptimization={results.route_optimization}
-                  />
-                </>
-              )}
-
-              {results.budget_data    && <BudgetCard    data={results.budget_data} />}
-              {results.itinerary_data && (
-                <ItineraryCard
-                  data={results.itinerary_data}
-                  sessionId={sessionId}
-                  onUpdateResults={(updatedItinerary, updatedRouteOpt) => {
-                    setResults(prev => ({
-                      ...prev,
-                      itinerary_data: updatedItinerary,
-                      route_optimization: updatedRouteOpt
-                    }));
-                  }}
+            {/* Chat Input Field Area */}
+            <div className="p-4 border-t border-zinc-850 bg-black/40">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                  placeholder="Ask TBuddy to plan a trip..."
+                  disabled={isProcessing}
+                  className="flex-1 bg-zinc-900/40 border border-violet-500/25 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-violet-300/30 focus:outline-none focus:border-violet-400/50 focus:ring-1 focus:ring-violet-400/20 disabled:opacity-50 transition-all"
                 />
-              )}
-
-            </AnimatePresence>
-
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
-
-        {/* ── Input area ───────────────────────────────────────────────── */}
-        <div className="sticky bottom-0 backdrop-blur-2xl bg-black/70 border-t border-violet-500/20 px-6 py-6 shadow-2xl">
-          <div className="max-w-5xl mx-auto">
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyPress={e => e.key === "Enter" && handleSendMessage()}
-                placeholder="Example: Plan a trip to Paris from London, Oct 20-25, budget $2000"
-                disabled={isProcessing}
-                className="flex-1 bg-zinc-900/60 border border-violet-500/30 rounded-2xl px-6 py-4 text-zinc-100 placeholder-violet-300/40 focus:outline-none focus:border-violet-400/60 focus:ring-2 focus:ring-violet-400/20 disabled:opacity-50 backdrop-blur-xl transition-all"
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={!input.trim() || isProcessing}
-                className="px-8 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-800 disabled:to-zinc-700 text-white rounded-2xl transition-all disabled:cursor-not-allowed disabled:opacity-50 font-bold shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50"
-              >
-                {isProcessing ? "Planning..." : "Send"}
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-violet-300/60">
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-3 h-3" /><span>Include origin & destination</span>
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!input.trim() || isProcessing}
+                  className="px-5 py-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 disabled:from-zinc-800 disabled:to-zinc-700 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50"
+                >
+                  Send
+                </button>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-3 h-3" /><span>Specify travel dates</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <DollarSign className="w-3 h-3" /><span>Mention your budget</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Users className="w-3 h-3" /><span>Number of travelers (optional)</span>
+              <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-violet-300/40">
+                <span className="flex items-center gap-1"><MapPin className="w-2.5 h-2.5" /> Destination</span>
+                <span className="flex items-center gap-1"><Calendar className="w-2.5 h-2.5" /> Dates</span>
+                <span className="flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" /> Budget</span>
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

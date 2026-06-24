@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 import math
+import json
 import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -11,6 +12,74 @@ from app.config.settings import settings
 from app.core.state import RouteInfo
 
 logger = logging.getLogger(__name__)
+
+# ========================= LLM FALLBACK HELPERS ========================= #
+
+async def _llm_generate_trains(origin: str, destination: str, date: str, from_code: str, to_code: str) -> Dict:
+    """LLM fallback: generate realistic Indian Railways train schedules when API is unavailable."""
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import SystemMessage, HumanMessage
+        llm = ChatGroq(
+            model=getattr(settings, "model_name", "llama-3.1-8b-instant"),
+            api_key=settings.groq_api_key,
+            temperature=0.3,
+        )
+        prompt = f"""Generate realistic Indian Railways train schedule data for trains from {origin} ({from_code}) to {destination} ({to_code}) on {date}.
+
+Return a JSON array of 4-6 trains with this exact structure:
+[{{"train_number": "12XXX", "train_name": "Express Name", "departure_time": "HH:MM", "arrival_time": "HH:MM", "duration": "Xh Ym", "classes": ["SL", "3A", "2A"], "from_station": "{from_code}", "to_station": "{to_code}", "days_of_run": "Daily"}}]
+
+Use realistic train numbers, names and timings for this route. Respond with ONLY a valid JSON array."""
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=f"{origin} to {destination}")])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        trains = json.loads(raw)
+        logger.info(f"LLM fallback generated {len(trains)} trains for {origin}→{destination}")
+        return {
+            "origin": origin, "destination": destination,
+            "from_station": from_code, "to_station": to_code,
+            "date": date, "trains": trains, "count": len(trains),
+            "note": "AI-generated estimate (live API unavailable)",
+            "source": "llm_fallback"
+        }
+    except Exception as e:
+        logger.warning(f"LLM train fallback failed: {e}")
+        return {"origin": origin, "destination": destination, "date": date, "trains": [], "count": 0,
+                "note": "Train data unavailable (API rate limited, LLM fallback also failed)"}
+
+
+async def _llm_generate_flights(origin: str, destination: str, date: str,
+                                 origin_code: str, dest_code: str) -> Dict:
+    """LLM fallback: generate realistic flight schedules when Skyscanner API is unavailable."""
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.messages import SystemMessage, HumanMessage
+        llm = ChatGroq(
+            model=getattr(settings, "model_name", "llama-3.1-8b-instant"),
+            api_key=settings.groq_api_key,
+            temperature=0.3,
+        )
+        prompt = f"""Generate realistic Indian domestic flight data from {origin} ({origin_code}) to {destination} ({dest_code}) on {date}.
+
+Return a JSON array of 4-6 flights:
+[{{"airline": "IndiGo", "price": 4500, "currency": "INR", "departure_time": "{date}T06:00:00", "arrival_time": "{date}T08:15:00", "duration_minutes": 135, "stops": 0, "origin_code": "{origin_code}", "dest_code": "{dest_code}"}}]
+
+Use realistic Indian airlines (IndiGo, Air India, SpiceJet, Vistara, Go First, Akasa Air) and INR prices (₹3000-₹12000). Respond with ONLY a valid JSON array."""
+        resp = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=f"{origin} to {destination}")])
+        raw = resp.content.strip().strip("```json").strip("```").strip()
+        flights = json.loads(raw)
+        logger.info(f"LLM fallback generated {len(flights)} flights for {origin}→{destination}")
+        return {
+            "origin": origin, "destination": destination,
+            "origin_code": origin_code, "dest_code": dest_code,
+            "date": date, "flights": flights, "count": len(flights),
+            "note": "AI-generated estimate (live API unavailable)",
+            "source": "llm_fallback"
+        }
+    except Exception as e:
+        logger.warning(f"LLM flight fallback failed: {e}")
+        return {"origin": origin, "destination": destination, "date": date, "flights": [], "count": 0,
+                "note": "Flight data unavailable (API error, LLM fallback also failed)"}
 
 # ========================= INPUT SCHEMAS ========================= #
 
@@ -113,11 +182,29 @@ class MapsServiceHelpers:
 
     @staticmethod
     def resolve_airport_code(city: str) -> Optional[str]:
-        return MapsServiceHelpers.AIRPORT_CODES.get(city.strip().lower())
+        if not city:
+            return None
+        key = city.split(",")[0].strip().lower()
+        code = MapsServiceHelpers.AIRPORT_CODES.get(key)
+        if code:
+            return code
+        for k, v in MapsServiceHelpers.AIRPORT_CODES.items():
+            if k in key or key in k:
+                return v
+        return None
 
     @staticmethod
     def resolve_station_code(city: str) -> Optional[str]:
-        return MapsServiceHelpers.STATION_CODES.get(city.strip().lower())
+        if not city:
+            return None
+        key = city.split(",")[0].strip().lower()
+        code = MapsServiceHelpers.STATION_CODES.get(key)
+        if code:
+            return code
+        for k, v in MapsServiceHelpers.STATION_CODES.items():
+            if k in key or key in k:
+                return v
+        return None
     
     @staticmethod
     def calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -442,31 +529,21 @@ async def search_flights(origin: str, destination: str, date: str) -> Dict[str, 
                 logger.warning(f"Failed to query Skyscanner autocomplete for {query_str}: {ex}")
             return None
 
-        # 1. Resolve origin
+        # 1. Resolve origin — always fetch entityId via autocomplete (required by Skyscanner API)
+        origin_sky_id = MapsServiceHelpers.resolve_airport_code(origin)
+        origin_entity_id = ""
         origin_info = await resolve_airport(origin)
-        origin_sky_id = origin_info["skyId"] if origin_info else None
-        origin_entity_id = origin_info["entityId"] if origin_info else ""
+        if origin_info:
+            origin_sky_id = origin_info.get("skyId") or origin_sky_id
+            origin_entity_id = origin_info.get("entityId", "")
 
-        # Fallback to hardcoded list if autocomplete failed
-        if not origin_sky_id:
-            fallback_code = MapsServiceHelpers.resolve_airport_code(origin)
-            if fallback_code:
-                origin_info = await resolve_airport(fallback_code)
-                origin_sky_id = origin_info["skyId"] if origin_info else fallback_code
-                origin_entity_id = origin_info["entityId"] if origin_info else ""
-
-        # 2. Resolve destination
+        # 2. Resolve destination — same
+        dest_sky_id = MapsServiceHelpers.resolve_airport_code(destination)
+        dest_entity_id = ""
         dest_info = await resolve_airport(destination)
-        dest_sky_id = dest_info["skyId"] if dest_info else None
-        dest_entity_id = dest_info["entityId"] if dest_info else ""
-
-        # Fallback to hardcoded list if autocomplete failed
-        if not dest_sky_id:
-            fallback_code = MapsServiceHelpers.resolve_airport_code(destination)
-            if fallback_code:
-                dest_info = await resolve_airport(fallback_code)
-                dest_sky_id = dest_info["skyId"] if dest_info else fallback_code
-                dest_entity_id = dest_info["entityId"] if dest_info else ""
+        if dest_info:
+            dest_sky_id = dest_info.get("skyId") or dest_sky_id
+            dest_entity_id = dest_info.get("entityId", "")
 
         if not origin_sky_id or not dest_sky_id:
             return {
@@ -559,20 +636,24 @@ async def search_flights(origin: str, destination: str, date: str) -> Dict[str, 
             }
             
         except Exception as e:
-            logger.error(f"Flight search failed: {e}")
-            return {"error": str(e), "flights": [], "count": 0, "note": f"Flight search failed: {str(e)}"}
+            logger.error(f"Flight search failed: {e} — switching to LLM fallback")
+            return await _llm_generate_flights(
+                origin, destination, date,
+                origin_sky_id or origin, dest_sky_id or destination
+            )
 
 
 @tool
 async def search_trains(origin: str, destination: str, date: str) -> Dict[str, Any]:
     """Search for train options between cities (Indian Railways).
     Automatically resolves city names to station codes.
-    
+    Falls back to AI-generated estimates when live API is unavailable.
+
     Args:
         origin: Origin city name (e.g., 'Delhi', 'Mumbai')
         destination: Destination city name
         date: Journey date in YYYY-MM-DD format
-    
+
     Returns:
         List of available trains with schedules and pricing
     """
@@ -580,14 +661,8 @@ async def search_trains(origin: str, destination: str, date: str) -> Dict[str, A
     to_code = MapsServiceHelpers.resolve_station_code(destination)
 
     if not from_code or not to_code:
-        return {
-            "origin": origin,
-            "destination": destination,
-            "date": date,
-            "trains": [],
-            "count": 0,
-            "note": f"Could not resolve station codes for {origin} and/or {destination}"
-        }
+        logger.info(f"Station codes not found for {origin}/{destination} — using LLM fallback")
+        return await _llm_generate_trains(origin, destination, date, origin or "ORIG", destination or "DEST")
 
     try:
         url = f"https://{MapsServiceHelpers.TRAINS_HOST}/api/v3/trainBetweenStations"
@@ -600,11 +675,38 @@ async def search_trains(origin: str, destination: str, date: str) -> Dict[str, A
             "toStationCode": to_code,
             "dateOfJourney": date
         }
-        
+
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers, params=params, timeout=15)
-            resp.raise_for_status()
+            resp = None
+            for attempt in range(3):
+                try:
+                    resp = await client.get(url, headers=headers, params=params, timeout=15)
+                    if resp.status_code == 429:
+                        wait_time = (attempt + 1) * 1.5
+                        logger.warning(f"Train API got 429, retrying in {wait_time}s (attempt {attempt + 1}/3)...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    resp.raise_for_status()
+                    break
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429 and attempt < 2:
+                        wait_time = (attempt + 1) * 1.5
+                        logger.warning(f"Train API got 429 (StatusError), retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise e
+
+            # All retries exhausted with 429 → LLM fallback
+            if not resp or resp.status_code == 429:
+                logger.warning("Train API rate-limited after 3 attempts — switching to LLM fallback")
+                return await _llm_generate_trains(origin, destination, date, from_code, to_code)
+
             trains_raw = resp.json().get("data", [])
+
+            # Real API returned empty → also use LLM fallback
+            if not trains_raw:
+                logger.info("Train API returned empty data — using LLM fallback")
+                return await _llm_generate_trains(origin, destination, date, from_code, to_code)
 
             trains = [{
                 "train_number": t.get("train_number", ""),
@@ -617,20 +719,17 @@ async def search_trains(origin: str, destination: str, date: str) -> Dict[str, A
                 "to_station": to_code,
                 "days_of_run": t.get("run_days", ""),
             } for t in trains_raw[:10]]
-            
+
             return {
-                "origin": origin,
-                "destination": destination,
-                "from_station": from_code,
-                "to_station": to_code,
-                "date": date,
-                "trains": trains,
-                "count": len(trains)
+                "origin": origin, "destination": destination,
+                "from_station": from_code, "to_station": to_code,
+                "date": date, "trains": trains, "count": len(trains),
+                "source": "live_api"
             }
-            
+
     except Exception as e:
-        logger.error(f"Train search failed: {e}")
-        return {"error": str(e), "trains": [], "count": 0}
+        logger.error(f"Train search failed: {e} — switching to LLM fallback")
+        return await _llm_generate_trains(origin, destination, date, from_code, to_code)
 
 
 @tool
@@ -802,13 +901,19 @@ async def get_comprehensive_travel_options(
         checkin = checkin or date
         checkout = checkout or date
         
-        # Fetch all options in parallel — tools now auto-resolve codes
+        # Stagger helper to avoid RapidAPI concurrent request rate limits (429)
+        async def run_with_delay(coro, delay: float):
+            if delay > 0:
+                await asyncio.sleep(delay)
+            return await coro
+
+        # Fetch all options with slight stagger to avoid RapidAPI rate limits
         tasks = [
-            get_route.ainvoke({"origin": origin, "destination": destination, "transport_mode": "driving"}),
-            search_flights.ainvoke({"origin": origin, "destination": destination, "date": date}),
-            search_trains.ainvoke({"origin": origin, "destination": destination, "date": date}),
-            search_buses.ainvoke({"origin": origin, "destination": destination, "date": date}),
-            search_hotels.ainvoke({"location": destination, "checkin": checkin, "checkout": checkout})
+            run_with_delay(get_route.ainvoke({"origin": origin, "destination": destination, "transport_mode": "driving"}), 0.0),
+            run_with_delay(search_flights.ainvoke({"origin": origin, "destination": destination, "date": date}), 0.0),
+            run_with_delay(search_trains.ainvoke({"origin": origin, "destination": destination, "date": date}), 1.5),
+            run_with_delay(search_buses.ainvoke({"origin": origin, "destination": destination, "date": date}), 3.0),
+            run_with_delay(search_hotels.ainvoke({"location": destination, "checkin": checkin, "checkout": checkout}), 4.5)
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)

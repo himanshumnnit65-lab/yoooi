@@ -9,7 +9,7 @@ from app.services.weather_service import WeatherService
 
 
 class WeatherAgent(BaseAgent):
-    def __init__(self, redis_client: RedisClient, groq_api_key: str = None, model_name: str = "llama-3.3-70b-versatile"):
+    def __init__(self, redis_client: RedisClient, groq_api_key: str = None, model_name: str = None):
         super().__init__(
             name="Sky Gazer", role="Weather Forecaster",
             expertise="Weather analysis, climate patterns, and travel weather recommendations",

@@ -53,6 +53,13 @@ interface HotelInfo {
     distance_km: number;
   };
 }
+interface DynamicPin {
+  name: string;
+  lat: number;
+  lng: number;
+  category: string;
+  description?: string;
+}
 interface TripMapProps {
   mapsData: MapsData;
   itineraryDays?: ItineraryDay[];
@@ -65,6 +72,7 @@ interface TripMapProps {
     day_routes?: RouteStop[][];
   };
   hotels?: HotelInfo[];
+  dynamicPins?: DynamicPin[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,11 +150,15 @@ export default function TripMap({
   destination,
   routeOptimization,
   hotels = [],
+  dynamicPins = [],
   apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010",
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef          = useRef<import("leaflet").Map | null>(null);
   const layersRef       = useRef<Record<string, PolylineLayer>>({});
+  // Generation counter — incremented on every initMap call so stale async
+  // callbacks know to abort before touching a destroyed Leaflet instance.
+  const mapGenRef       = useRef(0);
 
   const [activeMode, setActiveMode] = useState("primary");
   const [isLoading,  setIsLoading]  = useState(true);
@@ -266,16 +278,19 @@ export default function TripMap({
   useEffect(() => {
     if (!mapData || !mapContainerRef.current) return;
     const currentMapData = mapData;
-    let isMounted = true;
+
+    // Bump generation so any in-flight async initMap from a prior render
+    // will bail out before touching the (now stale) Leaflet instance.
+    const myGen = ++mapGenRef.current;
+    const isCurrentGen = () => mapGenRef.current === myGen;
 
     async function initMap() {
-      // FIX: inject CSS via DOM instead of <Head> (App Router compatible)
       ensureLeafletCSS();
-
-      // Small delay so the CSS link can be parsed before Leaflet renders
       await new Promise(r => setTimeout(r, 80));
+      if (!isCurrentGen() || !mapContainerRef.current) return;
 
       const L = (await import("leaflet")).default;
+      if (!isCurrentGen() || !mapContainerRef.current) return;
 
       // Fix broken default icon paths under webpack/Next.js
       // @ts-expect-error private internals
@@ -286,25 +301,22 @@ export default function TripMap({
         shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       });
 
-      if (!isMounted || !mapContainerRef.current) return;
-
+      // Destroy any previous map instance BEFORE creating a new one
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
         layersRef.current = {};
       }
+      if (!isCurrentGen() || !mapContainerRef.current) return;
 
       const map = L.map(mapContainerRef.current, {
         zoomControl: true,
         scrollWheelZoom: true,
         attributionControl: false,
       });
+      mapRef.current = map;
 
-      L.tileLayer(
-        TILE_URLS[mapStyle],
-        { maxZoom: 19 }
-      ).addTo(map);
-
+      L.tileLayer(TILE_URLS[mapStyle], { maxZoom: 19 }).addTo(map);
       L.control.attribution({ prefix: false, position: "bottomright" })
         .addAttribution('&copy; <a href="https://carto.com">CARTO</a>')
         .addTo(map);
@@ -312,6 +324,7 @@ export default function TripMap({
       const bounds: [number, number][] = [];
 
       const addMarker = (coord: Coord, label: string, colour: string, popup: string) => {
+        if (!isCurrentGen()) return;
         const icon = L.divIcon({
           html: makeMarkerSvg(label, colour),
           className: "",
@@ -326,55 +339,38 @@ export default function TripMap({
       // Draw layers and markers based on viewMode
       if (viewMode === "stops" && routeOptimization?.day_routes) {
         routeOptimization.day_routes.forEach((dayRoute, dayIdx) => {
+          if (!isCurrentGen()) return;
           const dayNum = dayIdx + 1;
           if (activeDay !== "all" && activeDay !== dayNum) return;
-
           const color = dayColour(dayIdx);
           const coordinates: [number, number][] = [];
 
           if (Array.isArray(dayRoute)) {
             dayRoute.forEach((stop, stopIdx) => {
-              if (stop && typeof stop.lat === "number" && typeof stop.lng === "number") {
-                const coord: Coord = { lat: stop.lat, lng: stop.lng };
-                const visitLabel = stopIdx + 1;
-                
-                // Draw stop marker
-                const stopIcon = L.divIcon({
-                  html: makeStopMarkerSvg(visitLabel, color),
-                  className: "",
-                  iconSize: [28, 28],
-                  iconAnchor: [14, 14],
-                  popupAnchor: [0, -12],
-                });
-
-                const stopName = stop.name || `Stop ${visitLabel}`;
-                const visitMinutes = stop.visit_minutes || 60;
-                const categoryText = stop.category ? `<br/>Category: ${stop.category}` : "";
-                const popupHtml = `<b>Day ${dayNum} - Stop #${visitLabel}</b><br/><b>${stopName}</b><br/>Duration: ${visitMinutes} mins${categoryText}`;
-
-                L.marker([coord.lat, coord.lng], { icon: stopIcon })
-                  .addTo(map)
-                  .bindPopup(popupHtml);
-
-                coordinates.push([coord.lat, coord.lng]);
-                bounds.push([coord.lat, coord.lng]);
-              }
+              if (!stop || typeof stop.lat !== "number" || typeof stop.lng !== "number") return;
+              const visitLabel = stopIdx + 1;
+              const stopIcon = L.divIcon({
+                html: makeStopMarkerSvg(visitLabel, color),
+                className: "",
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+                popupAnchor: [0, -12],
+              });
+              const stopName = stop.name || `Stop ${visitLabel}`;
+              const visitMinutes = stop.visit_minutes || 60;
+              const categoryText = stop.category ? `<br/>Category: ${stop.category}` : "";
+              const popupHtml = `<b>Day ${dayNum} - Stop #${visitLabel}</b><br/><b>${stopName}</b><br/>Duration: ${visitMinutes} mins${categoryText}`;
+              L.marker([stop.lat, stop.lng], { icon: stopIcon }).addTo(map).bindPopup(popupHtml);
+              coordinates.push([stop.lat, stop.lng]);
+              bounds.push([stop.lat, stop.lng]);
             });
           }
-
-          // Draw dotted polyline connecting day's stops
           if (coordinates.length > 1) {
-            L.polyline(coordinates, {
-              color: color,
-              weight: 4,
-              opacity: 0.85,
-              dashArray: "6 6",
-              lineCap: "round",
-              lineJoin: "round",
-            }).addTo(map);
+            L.polyline(coordinates, { color, weight: 4, opacity: 0.85, dashArray: "6 6", lineCap: "round", lineJoin: "round" }).addTo(map);
           }
         });
       } else {
+        if (!isCurrentGen()) return;
         // Primary polyline
         if (currentMapData.primaryPolyline.length > 1) {
           const latlngs = currentMapData.primaryPolyline.map(c => [c.lat, c.lng] as [number, number]);
@@ -385,26 +381,19 @@ export default function TripMap({
           layersRef.current["primary"] = pl;
           bounds.push(...latlngs);
         }
-
         // Alternative polylines (dimmed)
         for (const [mode, coords] of Object.entries(currentMapData.altPolylines)) {
-          if (coords.length < 2) continue;
+          if (!isCurrentGen() || coords.length < 2) continue;
           const latlngs = coords.map(c => [c.lat, c.lng] as [number, number]);
           const pl = L.polyline(latlngs, {
-            color: modeColour(mode), weight: 3, opacity: 0.3,
-            dashArray: "8 6", lineCap: "round",
+            color: modeColour(mode), weight: 3, opacity: 0.3, dashArray: "8 6", lineCap: "round",
           }).addTo(map);
           layersRef.current[mode] = pl;
         }
-
-        // Markers
         if (currentMapData.originCoord)
-          addMarker(currentMapData.originCoord, "A", "#f59e0b",
-            `<b>${currentMapData.originCoord.label ?? resolvedOrigin}</b><br/>Start`);
-
+          addMarker(currentMapData.originCoord, "A", "#f59e0b", `<b>${currentMapData.originCoord.label ?? resolvedOrigin}</b><br/>Start`);
         if (currentMapData.destCoord)
-          addMarker(currentMapData.destCoord, "B", "#ef4444",
-            `<b>${currentMapData.destCoord.label ?? resolvedDest}</b><br/>End`);
+          addMarker(currentMapData.destCoord, "B", "#ef4444", `<b>${currentMapData.destCoord.label ?? resolvedDest}</b><br/>End`);
 
         // Day stop markers (best-effort geocode)
         const dayPlaces = itineraryDays
@@ -420,69 +409,83 @@ export default function TripMap({
               const r = await fetch(`${apiBaseUrl}/api/v1/map/geocode/${encodeURIComponent(text)}`);
               if (!r.ok) return;
               const geo = await r.json();
-              if (!geo.success || !isMounted) return;
+              // Double-check generation AFTER the async fetch returns
+              if (!geo.success || !isCurrentGen() || mapRef.current !== map) return;
               const icon = L.divIcon({
                 html: makeMarkerSvg(String(day), "#7c3aed"),
                 className: "",
                 iconSize: [36, 44], iconAnchor: [18, 42], popupAnchor: [0, -40],
               });
-              L.marker([geo.lat, geo.lng], { icon })
-                .addTo(map)
-                .bindPopup(`<b>Day ${day}</b><br/>${geo.name ?? text}`);
+              L.marker([geo.lat, geo.lng], { icon }).addTo(map).bindPopup(`<b>Day ${day}</b><br/>${geo.name ?? text}`);
             } catch { /* best-effort */ }
           })
         );
       }
 
-      // Draw hotel markers if available
-      if (hotels && hotels.length > 0) {
-        hotels.forEach((hotel) => {
-          if (hotel.lat && hotel.lng) {
-            const hIcon = L.divIcon({
-              html: makeMarkerSvg("🏨", "#3b82f6"), // Distinct blue marker for hotels
-              className: "",
-              iconSize: [36, 44],
-              iconAnchor: [18, 42],
-              popupAnchor: [0, -40],
-            });
-            const fmtPriceText = hotel.price_per_night 
-              ? `₹${hotel.price_per_night.toLocaleString("en-IN")}/night` 
-              : "Price N/A";
-            const ratingText = hotel.rating ? `⭐ ${hotel.rating}/10` : "";
-            const popupHtml = `
-              <div style="font-family: system-ui, sans-serif; font-size: 12px; color: #1f2937; padding: 2px;">
-                <h4 style="margin: 0 0 4px; font-weight: bold; color: #1e1b4b;">${hotel.name}</h4>
-                <p style="margin: 0 0 4px; color: #4b5563;">📍 ${hotel.area}</p>
-                <div style="display: flex; justify-content: space-between; font-weight: 600;">
-                  <span>${fmtPriceText}</span>
-                  <span style="color: #b45309;">${ratingText}</span>
-                </div>
-              </div>
-            `;
-            L.marker([hotel.lat, hotel.lng], { icon: hIcon })
-              .addTo(map)
-              .bindPopup(popupHtml);
-            bounds.push([hotel.lat, hotel.lng]);
-          }
+      if (!isCurrentGen() || mapRef.current !== map) return;
+
+      // Hotel markers
+      hotels?.forEach((hotel) => {
+        if (!isCurrentGen() || !hotel.lat || !hotel.lng) return;
+        const hIcon = L.divIcon({
+          html: makeMarkerSvg("🏨", "#3b82f6"),
+          className: "",
+          iconSize: [36, 44], iconAnchor: [18, 42], popupAnchor: [0, -40],
+        });
+        const fmtPriceText = hotel.price_per_night ? `₹${hotel.price_per_night.toLocaleString("en-IN")}/night` : "Price N/A";
+        const ratingText = hotel.rating ? `⭐ ${hotel.rating}/10` : "";
+        const popupHtml = `<div style="font-family:system-ui,sans-serif;font-size:12px;color:#1f2937;padding:2px;">
+          <h4 style="margin:0 0 4px;font-weight:bold;color:#1e1b4b;">${hotel.name}</h4>
+          <p style="margin:0 0 4px;color:#4b5563;">📍 ${hotel.area}</p>
+          <div style="display:flex;justify-content:space-between;font-weight:600;">
+            <span>${fmtPriceText}</span><span style="color:#b45309;">${ratingText}</span>
+          </div></div>`;
+        L.marker([hotel.lat, hotel.lng], { icon: hIcon }).addTo(map).bindPopup(popupHtml);
+        bounds.push([hotel.lat, hotel.lng]);
+      });
+
+      // Dynamic TBuddy chat pins
+      if (dynamicPins?.length) {
+        const catEmoji: Record<string, string> = {
+          cafe: "☕", restaurant: "🍽️", temple: "🛕", market: "🛍️",
+          museum: "🏛️", park: "🌳", beach: "🏖️", viewpoint: "🔭",
+          hotel: "🏨", hospital: "🏥",
+        };
+        dynamicPins.forEach((pin) => {
+          if (!isCurrentGen()) return;
+          const emoji = catEmoji[pin.category?.toLowerCase()] ?? "📍";
+          const chatIcon = L.divIcon({
+            html: `<div style="background:linear-gradient(135deg,#f97316,#ea580c);border-radius:50% 50% 50% 0;width:36px;height:44px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 3px 10px rgba(249,115,22,0.5);border:2px solid rgba(255,255,255,0.3);transform:rotate(-45deg);"><span style="transform:rotate(45deg)">${emoji}</span></div>`,
+            className: "",
+            iconSize: [36, 44], iconAnchor: [18, 44], popupAnchor: [0, -44],
+          });
+          const popupHtml = `<div style="font-family:system-ui,sans-serif;font-size:12px;padding:4px;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+              <span style="font-size:16px;">${emoji}</span>
+              <strong style="color:#1e1b4b;">${pin.name}</strong>
+            </div>
+            <span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:999px;">${pin.category}</span>
+            ${pin.description ? `<p style="margin:6px 0 0;color:#4b5563;font-size:11px;">${pin.description}</p>` : ""}
+            <p style="margin:4px 0 0;font-size:10px;color:#f97316;font-weight:bold;">💬 Suggested by TBuddy</p>
+          </div>`;
+          L.marker([pin.lat, pin.lng], { icon: chatIcon }).addTo(map).bindPopup(popupHtml);
+          bounds.push([pin.lat, pin.lng]);
         });
       }
 
-      // Fit bounds
-      if (bounds.length > 1) {
-        map.fitBounds(bounds, { padding: [48, 48], maxZoom: 13 });
-      } else if (bounds.length === 1) {
-        map.setView(bounds[0], 10);
-      } else {
-        map.setView([20, 77], 5); // fallback: India
-      }
+      if (!isCurrentGen()) return;
 
-      mapRef.current = map;
+      // Fit bounds
+      if (bounds.length > 1) map.fitBounds(bounds, { padding: [48, 48], maxZoom: 13 });
+      else if (bounds.length === 1) map.setView(bounds[0], 10);
+      else map.setView([20, 77], 5);
     }
 
     initMap();
-    return () => { isMounted = false; };
+    // No cleanup needed — isCurrentGen() handles stale callbacks
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapData, viewMode, activeDay, mapStyle, hotels]);
+  }, [mapData, viewMode, activeDay, mapStyle, hotels, dynamicPins]);
+
 
   // ── Step 3: toggle polyline styles on mode change ─────────────────────────
   useEffect(() => {
@@ -617,12 +620,12 @@ export default function TripMap({
 
               {viewMode === "route" && (
                 <div className="flex gap-2 flex-wrap">
-                  {allModes.map(mode => {
+                  {allModes.map((mode, idx) => {
                     const active = activeMode === mode;
                     const colour = mode === "primary" ? modeColour(primaryMode) : modeColour(mode);
                     const label  = mode === "primary" ? primaryMode : mode;
                     return (
-                      <button key={mode} onClick={() => setActiveMode(mode)}
+                      <button key={mode || idx} onClick={() => setActiveMode(mode)}
                         style={{ borderColor: active ? colour : "transparent", color: active ? colour : "#a1a1aa" }}
                         className="px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all bg-black/30 hover:bg-black/50">
                         {modeEmoji(label)} {label}

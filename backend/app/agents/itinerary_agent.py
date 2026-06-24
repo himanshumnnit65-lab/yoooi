@@ -26,7 +26,7 @@ class ItineraryAgent(BaseAgent):
         self,
         redis_client: RedisClient,
         groq_api_key: str = None,
-        model_name: str = "llama-3.3-70b-versatile"
+        model_name: str = None
     ):
         super().__init__(
             name="Chronomancer",
@@ -155,6 +155,9 @@ Create detailed, personalized travel itineraries with local recommendations.
                 budget_data.get("budget_breakdown", {}).get("total")
             )
 
+        # ── RAG context (from Pinecone via orchestrator) ─────────────────────
+        rag_context = payload.get("rag_context", "")
+
         # ── User preferences ──────────────────────────────────────────────────
         prefs_str = None
         preference_weights = payload.get("preference_weights")
@@ -210,6 +213,7 @@ Create detailed, personalized travel itineraries with local recommendations.
             maps_data=maps_data,
             budget_data=budget_data,
             groq_api_key=api_key,
+            rag_context=rag_context,
         )
 
         await self._send_streaming_update(
@@ -235,8 +239,14 @@ Create detailed, personalized travel itineraries with local recommendations.
                 else:
                     activities.append(str(act))
 
+            day_val = day_data.get("day")
+            if isinstance(day_val, str) and day_val.isdigit():
+                day_val = int(day_val)
+            elif not isinstance(day_val, int):
+                day_val = len(itinerary_days_list) + 1
+
             itinerary_days_list.append({
-                "day": day_data.get("day", len(itinerary_days_list) + 1),
+                "day": day_val,
                 "date": day_data.get(
                     "date",
                     travel_dates[len(itinerary_days_list)]
@@ -268,6 +278,7 @@ Create detailed, personalized travel itineraries with local recommendations.
             "structured_data": {},
             "transport_details": {},
             "key_tips": [],
+            "local_guidelines": rag_context,
             "destination": destination,
             "total_days": total_days,
             "travelers_count": travelers_count,

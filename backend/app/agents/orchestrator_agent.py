@@ -1027,6 +1027,26 @@ Query Type: <query_type>
         """Dispatch request to itinerary agent for synthesis"""
         is_update = state.get("is_follow_up", False) and state.get("itinerary_data") is not None
         
+        # ── Fetch RAG context from Pinecone (non-blocking, non-fatal) ──
+        rag_context = ""
+        if settings.pinecone_api_key:
+            try:
+                from app.services.vector_service import search_travel_tips
+                tips = search_travel_tips(
+                    query=f"travel tips for {state['destination']}",
+                    destination=state["destination"],
+                )
+                if tips:
+                    rag_context = "VERIFIED LOCAL GUIDELINES:\n" + "\n".join(
+                        f"• {t}" for t in tips
+                    )
+                    self.logger.info(
+                        f"📚 RAG: {len(tips)} travel tips found for "
+                        f"{state['destination']}"
+                    )
+            except Exception as e:
+                self.logger.warning(f"⚠️ RAG lookup failed (non-fatal): {e}")
+
         request = {
             "request_id": f"itinerary_{uuid.uuid4().hex[:8]}",
             "session_id": state["session_id"],
@@ -1046,6 +1066,8 @@ Query Type: <query_type>
                 "budget_data": state.get("budget_data"),
                 "user_preferences": state.get("user_preferences"),
                 "preference_weights": (state.get("user_preferences") or {}).get("preference_weights"),
+                # RAG context from Pinecone
+                "rag_context": rag_context,
                 # NEW: Pass context for updates
                 "is_update": is_update,
                 "previous_itinerary": state.get("itinerary_data") if is_update else None,

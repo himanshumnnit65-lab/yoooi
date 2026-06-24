@@ -22,7 +22,7 @@ class BudgetAgent(BaseAgent):
         self,
         redis_client: RedisClient,
         groq_api_key: str = None,
-        model_name: str = "llama-3.3-70b-versatile",
+        model_name: str = None,
     ):
         super().__init__(
             name="Quartermaster",

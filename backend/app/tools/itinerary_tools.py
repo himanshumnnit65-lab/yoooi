@@ -138,6 +138,7 @@ async def generate_llm_itinerary(
     maps_data: Optional[Dict],
     budget_data: Optional[Dict],
     groq_api_key: Optional[str] = None,  # ← accept key directly from agent
+    rag_context: Optional[str] = None,    # ← RAG tips from Pinecone
 ) -> tuple:
     """
     Call Groq API to generate a fully personalized day-by-day itinerary.
@@ -240,6 +241,9 @@ BUDGET BREAKDOWN:
 {budget_text or '  Not available'}
 
 {route_plan_text}
+
+VERIFIED LOCAL GUIDELINES:
+{rag_context or '  None available — use your own knowledge'}
 
 RULES:
 1. Respond ONLY with a valid JSON array — no markdown, no explanation, no extra text

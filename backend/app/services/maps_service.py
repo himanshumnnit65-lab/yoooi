@@ -401,13 +401,29 @@ class MapsService:
     # ------------------------------
     def resolve_airport_code(self, city_name: str) -> Optional[str]:
         """Resolve city name to IATA airport code using local lookup."""
-        key = city_name.strip().lower()
-        return self._airport_codes.get(key)
+        if not city_name:
+            return None
+        key = city_name.split(",")[0].strip().lower()
+        code = self._airport_codes.get(key)
+        if code:
+            return code
+        for k, v in self._airport_codes.items():
+            if k in key or key in k:
+                return v
+        return None
 
     def resolve_station_code(self, city_name: str) -> Optional[str]:
         """Resolve city name to IRCTC station code using local lookup."""
-        key = city_name.strip().lower()
-        return self._station_codes.get(key)
+        if not city_name:
+            return None
+        key = city_name.split(",")[0].strip().lower()
+        code = self._station_codes.get(key)
+        if code:
+            return code
+        for k, v in self._station_codes.items():
+            if k in key or key in k:
+                return v
+        return None
 
     # ------------------------------
     # Travel Options (Flights, Trains, Buses, Hotels)
@@ -465,30 +481,20 @@ class MapsService:
                 return None
 
             # 1. Resolve origin
-            origin_info = await resolve_airport(origin)
-            origin_sky_id = origin_info["skyId"] if origin_info else None
-            origin_entity_id = origin_info["entityId"] if origin_info else ""
-
-            # Fallback to hardcoded list if autocomplete failed
+            origin_sky_id = self.resolve_airport_code(origin)
+            origin_entity_id = ""
             if not origin_sky_id:
-                fallback_code = self.resolve_airport_code(origin)
-                if fallback_code:
-                    origin_info = await resolve_airport(fallback_code)
-                    origin_sky_id = origin_info["skyId"] if origin_info else fallback_code
-                    origin_entity_id = origin_info["entityId"] if origin_info else ""
+                origin_info = await resolve_airport(origin)
+                origin_sky_id = origin_info["skyId"] if origin_info else None
+                origin_entity_id = origin_info["entityId"] if origin_info else ""
 
             # 2. Resolve destination
-            dest_info = await resolve_airport(destination)
-            dest_sky_id = dest_info["skyId"] if dest_info else None
-            dest_entity_id = dest_info["entityId"] if dest_info else ""
-
-            # Fallback to hardcoded list if autocomplete failed
+            dest_sky_id = self.resolve_airport_code(destination)
+            dest_entity_id = ""
             if not dest_sky_id:
-                fallback_code = self.resolve_airport_code(destination)
-                if fallback_code:
-                    dest_info = await resolve_airport(fallback_code)
-                    dest_sky_id = dest_info["skyId"] if dest_info else fallback_code
-                    dest_entity_id = dest_info["entityId"] if dest_info else ""
+                dest_info = await resolve_airport(destination)
+                dest_sky_id = dest_info["skyId"] if dest_info else None
+                dest_entity_id = dest_info["entityId"] if dest_info else ""
 
             if not origin_sky_id or not dest_sky_id:
                 logger.warning(f"Cannot resolve Skyscanner IDs: {origin}={origin_sky_id}, {destination}={dest_sky_id}")
@@ -602,8 +608,28 @@ class MapsService:
             }
             
             async with httpx.AsyncClient() as client:
-                r = await client.get(url, headers=headers, params=params, timeout=15)
-                r.raise_for_status()
+                r = None
+                for attempt in range(3):
+                    try:
+                        r = await client.get(url, headers=headers, params=params, timeout=15)
+                        if r.status_code == 429:
+                            wait_time = (attempt + 1) * 1.5
+                            logger.warning(f"Train options search got 429, retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        r.raise_for_status()
+                        break
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 429 and attempt < 2:
+                            wait_time = (attempt + 1) * 1.5
+                            logger.warning(f"Train options search got 429 (StatusError), retrying in {wait_time}s...")
+                            await asyncio.sleep(wait_time)
+                            continue
+                        raise e
+                
+                if not r or r.status_code == 429:
+                    return []
+                
                 trains_raw = r.json().get("data", [])
                 # Normalize to a consistent format
                 return [{
@@ -749,21 +775,27 @@ class MapsService:
                 logger.warning("Geocoding failed for travel options")
                 return {}
             
-            # Parallel fetch all options — code resolution happens inside each method
+            # Stagger helper to avoid RapidAPI concurrent request rate limits (429)
+            async def run_with_delay(coro, delay: float):
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                return await coro
+
+            # Parallel fetch all options with slight stagger to avoid RapidAPI rate limits
             tasks = [
-                self.get_route(
+                run_with_delay(self.get_route(
                     origin_geo["coordinates"], 
                     dest_geo["coordinates"], 
                     "driving"
-                ),
-                self.get_flight_options(origin, destination, date),
-                self.get_train_options(origin, destination, date),
-                self.get_bus_options(origin, destination, date),
-                self.get_hotels_near_location(
+                ), 0.0),
+                run_with_delay(self.get_flight_options(origin, destination, date), 0.0),
+                run_with_delay(self.get_train_options(origin, destination, date), 1.5),
+                run_with_delay(self.get_bus_options(origin, destination, date), 3.0),
+                run_with_delay(self.get_hotels_near_location(
                     destination, 
                     checkin or date, 
                     checkout or date
-                )
+                ), 4.5)
             ]
             
             results = await asyncio.gather(*tasks, return_exceptions=True)

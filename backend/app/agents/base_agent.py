@@ -70,7 +70,7 @@ class BaseAgent(ABC):
         redis_client: RedisClient,
         tools: Optional[List] = None,
         groq_api_key: str = None,
-        model_name: str = "llama-3.3-70b-versatile",
+        model_name: str = None,  # Always resolved from settings/.env; hardcoded agent defaults are ignored
     ):
         self.name        = name
         self.role        = role
@@ -79,10 +79,10 @@ class BaseAgent(ABC):
         self.redis_client = redis_client
         self.tools       = tools or []
 
-        # FIX 1: store groq_api_key and model_name on the instance
-        # so subclasses can access them via self.groq_api_key / self.model_name
+        # Always prefer settings.model_name (loaded from .env MODEL_NAME).
+        # model_name param is only a last-resort fallback if settings has nothing.
         self.groq_api_key = groq_api_key or getattr(settings, "groq_api_key", None)
-        self.model_name   = model_name or getattr(settings, "model_name", "llama-3.3-70b-versatile")
+        self.model_name   = getattr(settings, "model_name", None) or model_name or "llama-3.1-8b-instant"
 
         self.logger = logging.getLogger(f"agent.{name.lower().replace(' ', '_')}")
 
