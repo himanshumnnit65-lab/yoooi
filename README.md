@@ -532,6 +532,44 @@ curl http://localhost:8000/mcp/status
 
 ---
 
+## 📚 Retrieval-Augmented Generation (RAG) System
+
+TBuddy integrates a semantic search engine to retrieve hyper-local travel rules, safety warnings, and dining customs dynamically. This grounds both the itinerary builder and the chat copilot in verified local context.
+
+### Architecture Overview
+1. **Local Embeddings**: Converts text blocks into **384-dimensional dense vectors** in real-time using the local `sentence-transformers/all-MiniLM-L6-v2` model (running in an isolated threadpool to keep FastAPI non-blocking).
+2. **Cloud Vector Store**: Integrates with a serverless **Pinecone index** for sub-second database searches.
+3. **Local Hybrid Fallback**: If no Pinecone key is configured, the server automatically queries a local vector file (`app/scripts/data/mock_pinecone_db.json`) using in-memory cosine similarity, enabling zero-config offline development.
+4. **Dual-Pass Querying**: The search runs a city-level filter first (e.g. `destination = "delhi"`). If no matching entries exist, it retries with a country-level filter (e.g. `country = "india"`) to fetch broader regional guidelines.
+
+### Environment Setup
+Add your Pinecone configurations to `backend/.env`:
+```bash
+PINECONE_API_KEY=your_pinecone_api_key_here
+PINECONE_INDEX_NAME=tbuddy
+```
+
+> [!IMPORTANT]
+> When creating your custom index on the Pinecone Console, configure it manually with **384 dimensions**, **Cosine similarity metric**, and a **Dense vector type**. Using other dimensions will cause ingestion failures.
+
+### Data Ingestion
+Populate your Pinecone index by running the data ingestion scripts:
+
+#### A. Ingest Curated Travel Tips
+Loads a predefined list of destination guidelines:
+```bash
+python -m app.scripts.ingest_travel_data
+```
+
+#### B. Scraping & Ingesting Wikivoyage Chapters
+Downloads structured travel sections (Transit, Eat, Stay Safe, Cope) directly from the Wikivoyage API for a targeted destination:
+```bash
+python -m app.scripts.ingest_wikivoyage --destination "Delhi" --country "India"
+```
+
+---
+
+
 ## 🧪 Testing & Monitoring
 
 ### Health Checks
