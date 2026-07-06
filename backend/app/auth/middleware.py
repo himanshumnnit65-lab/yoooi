@@ -1,13 +1,15 @@
 """
 app/auth/middleware.py
-Middleware for API Key Authentication
+Middleware for Unified Authentication (API Key and Google OAuth)
 """
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Callable
+from typing import Callable, Optional
 import logging
 
 from app.auth.api_key_manager import APIKeyManager
+from app.auth.google_auth import verify_google_id_token
 from app.messaging.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -15,10 +17,11 @@ logger = logging.getLogger(__name__)
 
 class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to validate API keys for protected routes
+    Middleware to validate API keys and Google Auth tokens for protected routes.
+    Keeps the class name APIKeyAuthMiddleware for backward compatibility in main.py.
     """
     
-    # Routes that don't require API key authentication
+    # Routes that don't require authentication
     EXEMPT_PATHS = [
         "/docs",
         "/redoc",
@@ -50,19 +53,19 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     def is_exempt_path(self, path: str) -> bool:
         """Check if path is exempt from authentication"""
         for exempt_path in self.EXEMPT_PATHS:
-            if path.startswith(exempt_path):
+            if path == exempt_path or path.startswith(exempt_path + "/"):
                 return True
         return False
     
     def is_admin_path(self, path: str) -> bool:
         """Check if path requires admin permissions"""
         for admin_path in self.ADMIN_PATHS:
-            if path.startswith(admin_path):
+            if path == admin_path or path.startswith(admin_path + "/"):
                 return True
         return False
     
     async def dispatch(self, request: Request, call_next: Callable):
-        """Process request and validate API key"""
+        """Process request and validate API key or Google token"""
         
         # Skip authentication for exempt paths
         if self.is_exempt_path(request.url.path):
@@ -70,59 +73,98 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         
         # Skip if authentication not enforced (development mode)
         if not self.enforce_auth:
-            logger.debug(f"API key auth disabled for: {request.url.path}")
+            logger.debug(f"Auth disabled for: {request.url.path}")
             return await call_next(request)
         
-        # Extract API key from header
-        api_key = request.headers.get("X-API-Key")
-        
-        if not api_key:
-            logger.warning(f"Missing API key for: {request.url.path}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="API key is required. Provide X-API-Key header."
-            )
-        
-        # Validate API key
-        try:
-            manager = await self.get_manager()
-            metadata = await manager.validate_api_key(api_key)
+        # Extract Google Token (Authorization header or query param for WebSockets)
+        auth_header = request.headers.get("Authorization")
+        token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+        else:
+            token = request.query_params.get("token")
             
-            if not metadata:
-                logger.warning(f"Invalid API key attempt for: {request.url.path}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid or expired API key"
+        # Extract API Key (X-API-Key header or query param)
+        api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+        
+        # 1. Authenticate via Google ID Token if present
+        if token:
+            user_info = verify_google_id_token(token)
+            if user_info:
+                request.state.user = user_info
+                # Attach mock scopes for path authorization
+                request.state.api_key_metadata = None 
+                
+                logger.debug(
+                    f"Authenticated via Google: {user_info['email']} for path: {request.url.path}"
                 )
-            
-            # Check admin permissions for admin paths
-            if self.is_admin_path(request.url.path):
-                if "admin" not in metadata.scopes:
+                
+                # Check admin paths (Google authenticated users are not admin by default)
+                if self.is_admin_path(request.url.path):
                     logger.warning(
-                        f"Non-admin key attempted admin route: {request.url.path}, "
-                        f"key_id: {metadata.key_id}"
+                        f"Google user {user_info['email']} attempted admin route: {request.url.path}"
                     )
-                    raise HTTPException(
+                    return JSONResponse(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Admin permissions required"
+                        content={"error": "Forbidden", "details": "Admin permissions required"}
                     )
-            
-            # Attach metadata to request state for use in routes
-            request.state.api_key_metadata = metadata
-            
-            logger.debug(
-                f"Authenticated request: {request.url.path}, "
-                f"key_id: {metadata.key_id}, key_name: {metadata.name}"
-            )
-            
-            response = await call_next(request)
-            return response
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error validating API key: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal authentication error"
-            )
+                
+                return await call_next(request)
+            else:
+                logger.warning(f"Invalid Google token attempt for: {request.url.path}")
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"error": "Unauthorized", "details": "Invalid or expired Google Token"}
+                )
+                
+        # 2. Authenticate via traditional API Key if present
+        if api_key:
+            try:
+                manager = await self.get_manager()
+                metadata = await manager.validate_api_key(api_key)
+                
+                if not metadata:
+                    logger.warning(f"Invalid API key attempt for: {request.url.path}")
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={"error": "Unauthorized", "details": "Invalid or expired API key"}
+                    )
+                
+                # Check admin permissions for admin paths
+                if self.is_admin_path(request.url.path):
+                    if "admin" not in metadata.scopes:
+                        logger.warning(
+                            f"Non-admin key attempted admin route: {request.url.path}, "
+                            f"key_id: {metadata.key_id}"
+                        )
+                        return JSONResponse(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            content={"error": "Forbidden", "details": "Admin permissions required"}
+                        )
+                
+                # Attach metadata to request state for use in routes
+                request.state.api_key_metadata = metadata
+                request.state.user = None
+                
+                logger.debug(
+                    f"Authenticated via API Key: {metadata.name} for path: {request.url.path}"
+                )
+                
+                return await call_next(request)
+                
+            except Exception as e:
+                logger.error(f"Error validating API key: {str(e)}")
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"error": "Internal Error", "details": "Internal authentication error"}
+                )
+                
+        # If neither is provided
+        logger.warning(f"Missing authentication credentials for: {request.url.path}")
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "error": "Authentication required",
+                "details": "Provide X-API-Key header or Authorization: Bearer <token>."
+            }
+        )

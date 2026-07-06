@@ -1999,6 +1999,22 @@ async def get_proactive_alerts_endpoint(session_id: str, force_refresh: bool = F
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi import Request
+
+@router.get("/auth/user")
+async def get_authenticated_user(request: Request):
+    """
+    Get profile information of the currently authenticated Google user.
+    """
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="No Google profile found. Authenticate using Bearer token."
+        )
+    return user
+
+
 # ==================== EXPORT STARTUP/SHUTDOWN HANDLERS ====================
 
 async def startup():

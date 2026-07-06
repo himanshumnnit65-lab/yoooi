@@ -5,6 +5,7 @@ import { MessageCircle, ChevronUp, ChevronDown, Clock } from "lucide-react";
 import dynamic from "next/dynamic";
 import PreferencePoll from "@/components/PreferencePoll";
 import Hyperspeed from "@/components/Hyperspeed/Hyperspeed";
+import { getAuthHeaders } from "@/lib/auth-context";
 
 // Leaflet needs `window`, so load TripMap only on the client
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
@@ -1211,7 +1212,10 @@ const TripChatPanel = ({
         `${API_URL}/api/v2/orchestrator/session/${sessionId}/chat`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...getAuthHeaders()
+          },
           body: JSON.stringify({ message: userMsg }),
         }
       );
@@ -1484,7 +1488,9 @@ const ItineraryView = ({
     setLoadingHotels(true);
     setHotelError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${sessionId}/hotels`);
+      const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${sessionId}/hotels`, {
+        headers: getAuthHeaders()
+      });
       if (res.status === 429) {
         const body = await res.json().catch(() => ({}));
         setHotelError(body.detail || "Rate limited. Please wait before refreshing.");
@@ -1514,7 +1520,9 @@ const ItineraryView = ({
     setSwappingActivityId(activityId);
     setLoadingSwapOptions(true);
     try {
-      const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${sessionId}/swap-options?activity_id=${activityId}`);
+      const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${sessionId}/swap-options?activity_id=${activityId}`, {
+        headers: getAuthHeaders()
+      });
       if (!res.ok) throw new Error("Failed to load options");
       const result = await res.json();
       setSwapAlternatives(result.alternatives || []);
@@ -1532,7 +1540,10 @@ const ItineraryView = ({
     try {
       const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${sessionId}/swap-apply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
         body: JSON.stringify({
           activity_id: activityId,
           selected_alternative: alternative
@@ -2029,7 +2040,11 @@ const Page = () => {
     setUserQuery(query); setIsPlanning(true); setError(null); setPlanData(null);
     try {
       const startRes = await fetch(`${API_URL}/api/v2/orchestrator/plan`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
         body: JSON.stringify({ query, session_id: null, include_travel_options: true, ...(preferenceWeights ? { preference_weights: preferenceWeights } : {}) }),
       });
       if (!startRes.ok) throw new Error((await startRes.json().catch(()=>({}))).detail || "Failed to start plan");
@@ -2039,7 +2054,9 @@ const Page = () => {
 
       for (let i = 0; i < 40; i++) {
         await new Promise(r => setTimeout(r, 3000));
-        const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${session_id}/result`);
+        const res = await fetch(`${API_URL}/api/v2/orchestrator/session/${session_id}/result`, {
+          headers: getAuthHeaders()
+        });
         if (res.status === 400) continue;
         if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || "Failed to fetch result");
         const result = await res.json();

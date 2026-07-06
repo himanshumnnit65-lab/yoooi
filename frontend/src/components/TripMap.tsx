@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getAuthHeaders } from "@/lib/auth-context";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Coord { lat: number; lng: number; label?: string }
@@ -229,7 +230,10 @@ export default function TripMap({
 
         const res  = await fetch(`${apiBaseUrl}/api/v1/map/data`, {
           method:  "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...getAuthHeaders()
+          },
           body:    JSON.stringify(body),
         });
         const json = await res.json();
@@ -457,7 +461,9 @@ export default function TripMap({
         await Promise.allSettled(
           dayPlaces.slice(0, 6).map(async ({ day, text }) => {
             try {
-              const r = await fetch(`${apiBaseUrl}/api/v1/map/geocode/${encodeURIComponent(text)}`);
+              const r = await fetch(`${apiBaseUrl}/api/v1/map/geocode/${encodeURIComponent(text)}`, {
+                headers: getAuthHeaders()
+              });
               if (!r.ok) return;
               const geo = await r.json();
               if (!geo.success || !active || mapRef.current !== map) return;

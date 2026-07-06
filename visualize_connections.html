@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TBuddy / Ringmaster Round Table v2.0 - Architecture Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #131b2e;
+            --bg-card: rgba(25, 35, 58, 0.6);
+            --accent-primary: #6366f1;
+            --accent-secondary: #06b6d4;
+            --accent-gradient: linear-gradient(135deg, #6366f1, #3b82f6, #06b6d4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.15) 0%, transparent 40%);
+        }
+
+        header {
+            padding: 2.5rem 2rem 1.5rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(10, 14, 23, 0.8);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .container {
+            max-width: 1500px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+            flex: 1;
+        }
+
+        /* Tabs */
+        .tabs-nav {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-gradient);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        /* Diagram Panels */
+        .tab-pane {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .pane-header {
+            margin-bottom: 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 1.5rem;
+        }
+
+        .pane-title {
+            font-size: 1.8rem;
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .pane-desc {
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+
+        .mermaid-wrapper {
+            background: rgba(10, 14, 23, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 2rem;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 4rem;
+        }
+
+        /* Badge */
+        .badge {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🎪 Ringmaster Round Table v2.0</h1>
+    <p class="subtitle">Interactive Codebase & Architecture Visualizer for TBuddy Trip Planner</p>
+</header>
+
+<div class="container">
+    <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchTab('codebase')">🔗 Complete File Wiring</button>
+        <button class="tab-btn" onclick="switchTab('pubsub')">⚡ Redis Pub/Sub Sequence</button>
+        <button class="tab-btn" onclick="switchTab('mcp')">🛠️ MCP Dynamic Binding</button>
+        <button class="tab-btn" onclick="switchTab('hitl')">🔄 HITL State Machine</button>
+        <button class="tab-btn" onclick="switchTab('ortools')">🧮 Hybrid OR-Tools TSP</button>
+        <button class="tab-btn" onclick="switchTab('frontend')">⚛️ Frontend Real-Time State</button>
+    </div>
+
+    <!-- Tab 1: Complete File Wiring -->
+    <div id="codebase" class="tab-pane active">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">Architecture</span> 1. File-to-File Codebase Wiring Map</div>
+            <p class="pane-desc">This diagram illustrates exactly how every file and module in your codebase connects—from the Next.js frontend (`page.tsx`), through FastAPI routers (`routes.py`), into Upstash Redis Pub/Sub (`redis_client.py`), out to Docker worker containers (`workers/*`), domain agents (`agents/*`), and finally into the FastMCP server (`mcp_server.py`) and external APIs.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+graph TB
+    subgraph Frontend ["🖥️ Frontend Layer (/frontend)"]
+        ChatPage["src/app/chat/page.tsx<br>(Next.js Client UI)"]
+    end
+
+    subgraph Backend Entry & API ["⚡ Backend Entry & API Layer (/backend/app)"]
+        Main["main.py<br>(FastAPI App Setup)"]
+        Settings["config/settings.py<br>(Env & Config)"]
+        Routes["api/routes.py<br>(HTTP REST /plan & /ws/session)"]
+        Auth["auth/google_auth.py<br>(Google OAuth & JWT)"]
+        ReqModels["models/requests.py<br>(Pydantic Request Schemas)"]
+    end
+
+    subgraph Core Orchestrator & State ["🧠 Core Orchestrator & State (/backend/app/core)"]
+        Orchestrator["core/orchestrator.py<br>(Orchestrator Service)"]
+        State["core/state.py<br>(OrchestratorState & HITLState)"]
+        RedisClient["messaging/redis_client.py<br>(Upstash Redis Pub/Sub)"]
+        Protocols["messaging/protocols.py<br>(MCP Message Schemas)"]
+    end
+
+    subgraph Workers Layer ["🚀 Parallel Worker Containers (/backend/app/workers)"]
+        W_Weather["workers/weather_worker.py"]
+        W_Events["workers/events_worker.py"]
+        W_Maps["workers/maps_worker.py"]
+        W_Budget["workers/budget_worker.py"]
+        W_Itin["workers/itinerary_worker.py"]
+    end
+
+    subgraph Agents Layer ["🤖 Domain Agents (/backend/app/agents)"]
+        BaseAgent["agents/base_agent.py<br>(LangGraph Root)"]
+        A_Weather["agents/weather_agent.py<br>(Sky Gazer)"]
+        A_Events["agents/events_agent.py<br>(Event Explorer)"]
+        A_Maps["agents/maps_agent.py<br>(Trailblazer)"]
+        A_Budget["agents/budget_agent.py<br>(Quartermaster)"]
+        A_Itin["agents/itinerary_agent.py<br>(Itinerary Weaver)"]
+    end
+
+    subgraph MCP Tool Ecosystem ["🛠️ MCP Tool Ecosystem"]
+        MCPClient["mcp_client.py<br>(MCP Client Adapter)"]
+        MCPServer["mcp_server.py<br>(FastMCP Server - 38 Tools over SSE)"]
+    end
+
+    subgraph Services & External Integration ["🌐 Services & Integrations (/backend/app/services)"]
+        S_Weather["services/weather_service.py"]
+        S_Events["services/event_service.py"]
+        S_Maps["services/maps_service.py<br>(OR-Tools TSP & OpenRouteService)"]
+        S_Budget["services/budget_service.py"]
+        S_Itin["services/itinerary_service.py"]
+    end
+
+    %% Frontend to API connections
+    ChatPage -->|1. HTTP POST /api/v2/plan| Routes
+    ChatPage <-->|2. WebSocket Stream /ws/session| Routes
+    Routes --> Auth
+    Routes --> ReqModels
+    Main --> Routes
+    Main --> Settings
+
+    %% API to Orchestrator connections
+    Routes -->|3. Invoke Plan / HITL Actions| Orchestrator
+    Orchestrator --> State
+    Orchestrator <-->|4. Read/Write State & Publish Tasks| RedisClient
+    RedisClient --> Protocols
+
+    %% Redis PubSub to Workers
+    RedisClient ==>|PUBLISH travel:tasks:weather| W_Weather
+    RedisClient ==>|PUBLISH travel:tasks:events| W_Events
+    RedisClient ==>|PUBLISH travel:tasks:maps| W_Maps
+    RedisClient ==>|PUBLISH travel:tasks:budget| W_Budget
+    RedisClient ==>|PUBLISH travel:tasks:itinerary| W_Itin
+
+    %% Workers instantiate Agents
+    W_Weather --> A_Weather
+    W_Events --> A_Events
+    W_Maps --> A_Maps
+    W_Budget --> A_Budget
+    W_Itin --> A_Itin
+
+    %% Agents inherit BaseAgent & call MCP
+    A_Weather -- Inherits --> BaseAgent
+    A_Events -- Inherits --> BaseAgent
+    A_Maps -- Inherits --> BaseAgent
+    A_Budget -- Inherits --> BaseAgent
+    A_Itin -- Inherits --> BaseAgent
+
+    BaseAgent <-->|5. Fetch Dynamic Tools| MCPClient
+    MCPClient <-->|6. SSE / HTTP Tool Execution| MCPServer
+
+    %% MCP Server executes Services
+    MCPServer --> S_Weather
+    MCPServer --> S_Events
+    MCPServer --> S_Maps
+    MCPServer --> S_Budget
+    MCPServer --> S_Itin
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: PubSub Sequence -->
+    <div id="pubsub" class="tab-pane">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">Concurrency</span> 2. Redis Pub/Sub Parallel Execution Sequence</div>
+            <p class="pane-desc">This sequence diagram highlights how an incoming request is dispatched simultaneously to 5 independent worker containers via Upstash Redis Pub/Sub channels, achieving 3-5x faster responses than sequential execution, and how streaming progress updates push directly to the user over WebSockets.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+sequenceDiagram
+    autonumber
+    actor User as 👤 Next.js UI (page.tsx)
+    participant API as ⚡ FastAPI (routes.py)
+    participant Redis as 🧠 Upstash Redis Pub/Sub
+    participant W as ⛅ Weather Worker
+    participant E as 🎟️ Events Worker
+    participant B as 💰 Budget Worker
+    participant I as 📅 Itinerary Worker
+
+    User->>API: POST /api/v2/plan (destination, budget, preferences)
+    API->>Redis: Initialize Session State (status=PROCESSING, TTL=3600s)
+    API->>User: Return {session_id, status: "started"}
+    
+    User->>API: Connect WebSocket (/ws/session/{session_id})
+    API->>Redis: Subscribe to "travel:streams:{session_id}"
+
+    note over API,Redis: Broadcast Parallel Tasks to All Domain Workers
+    par Parallel Agent Execution
+        API->>Redis: PUBLISH travel:tasks:weather
+        API->>Redis: PUBLISH travel:tasks:events
+        API->>Redis: PUBLISH travel:tasks:budget
+        API->>Redis: PUBLISH travel:tasks:itinerary
+    end
+
+    note over W,I: Workers Process Asynchronously & Stream Updates
+    par Live Streaming Progress
+        W->>Redis: PUBLISH travel:streams (type: "progress", msg: "Fetching 5-day forecast")
+        Redis-->>User: WebSocket Stream: Weather progress
+        E->>Redis: PUBLISH travel:streams (type: "progress", msg: "Scanning local events")
+        Redis-->>User: WebSocket Stream: Events progress
+        W->>Redis: PUBLISH travel:streams (type: "completed", data: WeatherData)
+        Redis-->>User: WebSocket Stream: Weather completed
+        
+        B->>Redis: PUBLISH travel:streams (type: "completed", data: BudgetBreakdown)
+        Redis-->>User: WebSocket Stream: Budget completed
+        
+        E->>Redis: PUBLISH travel:streams (type: "completed", data: EventsList)
+        Redis-->>User: WebSocket Stream: Events completed
+
+        I->>Redis: PUBLISH travel:streams (type: "progress", msg: "Weaving day-by-day schedule")
+        I->>Redis: PUBLISH travel:streams (type: "completed", data: ItinerarySchedule)
+        Redis-->>User: WebSocket Stream: Itinerary completed
+    end
+
+    note over API,Redis: Orchestrator Aggregates & Finalizes
+    API->>Redis: Update OrchestratorState (status=COMPLETED, merged_data)
+    Redis-->>User: WebSocket Stream: Trip Plan Ready!
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 3: MCP Dynamic Binding -->
+    <div id="mcp" class="tab-pane">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">AI Ecosystem</span> 3. Model Context Protocol (MCP) Dynamic Tool Binding</div>
+            <p class="pane-desc">To prevent LLM context window bloat and tool hallucination when exposing 38 custom travel tools, TBuddy agents query the FastMCP server (`mcp_server.py`) at runtime via `get_mcp_tools`, inspect schemas by category tag, and dynamically bind only the tools required for their specific task.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+graph LR
+    subgraph Agent Runtime ["🤖 BaseAgent Runtime (base_agent.py)"]
+        Prompt["System Prompt & Task Goal"]
+        ToolNode["LangGraph ToolNode<br>(Dynamic Tool Executor)"]
+        LLMCall["LLM Engine<br>(Groq Llama 3.3 / Gemini)"]
+    end
+
+    subgraph MCP Client Layer ["🔌 MCP Client Adapter (mcp_client.py)"]
+        Inspector["get_mcp_tools(filter_tags)"]
+        HealthCheck["check_mcp_health()"]
+    end
+
+    subgraph MCP Server Layer ["🛠️ FastMCP Server (mcp_server.py over SSE)"]
+        T_Flights["✈️ Flight Tools<br>(search_flights, get_prices)"]
+        T_Hotels["🏨 Hotel Tools<br>(find_hotels, check_availability)"]
+        T_Weather["⛅ Weather Tools<br>(get_forecast, radar)"]
+        T_Routes["🗺️ Routing Tools<br>(calc_distance, get_polyline)"]
+        T_Budget["💰 Finance Tools<br>(currency_convert, tax_calc)"]
+        T_Events["🎟️ Event Tools<br>(search_concerts, exhibitions)"]
+    end
+
+    %% Execution Flow
+    Prompt --> Inspector
+    Inspector -->|1. Request Tools by Category/Tag| MCPServer
+    MCPServer -->|2. Return Filtered JSON Schemas| Inspector
+    Inspector -->|3. Bind Schemas to LLM| LLMCall
+    LLMCall -->|4. Generate Tool Call Decision| ToolNode
+    ToolNode -->|5. Execute over SSE / MCP Protocol| MCPServer
+
+    MCPServer -.-> T_Flights
+    MCPServer -.-> T_Hotels
+    MCPServer -.-> T_Weather
+    MCPServer -.-> T_Routes
+    MCPServer -.-> T_Budget
+    MCPServer -.-> T_Events
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 4: HITL State Machine -->
+    <div id="hitl" class="tab-pane">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">Interactive UX</span> 4. Human-in-the-Loop (HITL) State Machine & Delta Loop</div>
+            <p class="pane-desc">When a user interacts with the 5 high-impact features (Thumbs Up/Down, Budget Sliders, Activity/Day Locks, Preference Polls, or Swap Suggestions), the system mutates the `HITLState` in Redis and performs targeted delta-regeneration without recomputing unlocked portions of the trip.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+stateDiagram-v2
+    [*] --> InitialPlanGenerated: User Submits Trip Query
+    
+    state InitialPlanGenerated {
+        state "Trip Schedule Displayed" as Display
+        state "HITLState in Redis" as Memory
+    }
+
+    InitialPlanGenerated --> UserInteraction: User Triggers HITL Feature
+
+    state UserInteraction {
+        [*] --> ThumbsFeedback: 👍 / 👎 Activity
+        [*] --> BudgetSlider: 🎚️ Adjust Ratios (e.g., Food +20%)
+        [*] --> LockFeature: 🔒 Freeze Day 1 or Activity X
+        [*] --> SwapAction: 🔄 Select Alternative Item
+    }
+
+    ThumbsFeedback --> StateMutation: Add to disliked_activities list
+    BudgetSlider --> StateMutation: Update custom_budget_allocation
+    LockFeature --> StateMutation: Add to locked_days / locked_activities
+    SwapAction --> StateMutation: Apply replacement in itinerary_data
+
+    state StateMutation {
+        state "Persist Delta to Redis State Store" as RedisUpdate
+    }
+
+    StateMutation --> TargetedRegeneration: User Clicks 'Regenerate' or Apply
+
+    state TargetedRegeneration {
+        state "Construct Dynamic LLM System Instructions" as PromptInject
+        state "Filter Out Locked Days/Activities" as FilterLocked
+        state "Invoke Only Affected Worker Agents" as DeltaWorker
+        state "Recalculate Route Geometry (OR-Tools)" as RouteReopt
+        
+        PromptInject --> FilterLocked
+        FilterLocked --> DeltaWorker
+        DeltaWorker --> RouteReopt
+    }
+
+    TargetedRegeneration --> InitialPlanGenerated: Publish Updated State via WebSocket
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 5: Hybrid OR-Tools TSP -->
+    <div id="ortools" class="tab-pane">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">Algorithmic Math</span> 5. Hybrid Neuro-Symbolic Routing (LLM + OR-Tools TSP)</div>
+            <p class="pane-desc">LLMs are creative reasoning engines but fail at mathematical combinatorial optimization. TBuddy uses a Hybrid Architecture: the LLM selects theme-aligned activities, while Google OR-Tools solves the Traveling Salesperson Problem (TSP) to order locations geographically, minimizing travel time and distance.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+flowchart TD
+    subgraph Step 1: Creative Reasoning ["🧠 Step 1: Creative Reasoning (LLM)"]
+        UserQuery["User Constraints & Preferences<br>(e.g., 3 Days Delhi, Nature 5/5, Culture 4/5)"]
+        LLMSelect["Itinerary Weaver Agent<br>(Selects 10 Candidate Attractions per Day)"]
+        CandidateList["Unordered Activity List with Lat/Long Coordinates"]
+        
+        UserQuery --> LLMSelect
+        LLMSelect --> CandidateList
+    end
+
+    subgraph Step 2: Spatial Matrix Generation ["🗺️ Step 2: Spatial Matrix (OpenRouteService)"]
+        CandidateList --> ORSCall["Call OpenRouteService Distance Matrix API"]
+        Matrix["N x N Time & Distance Cost Matrix<br>(Travel time between every pair of coordinates)"]
+        ORSCall --> Matrix
+    end
+
+    subgraph Step 3: Mathematical Optimization ["🧮 Step 3: TSP Combinatorial Solver (Google OR-Tools)"]
+        Matrix --> ORSolver["Google OR-Tools Routing Model<br>(Objective: Minimize Total Travel Time)"]
+        Constraints["Apply Hard Constraints:<br>- Locked Activities stay in fixed slots<br>- Lunch/Dinner within meal windows"]
+        ORSolver --- Constraints
+        SortedSequence["Geographic & Chronologically Ordered Schedule"]
+        ORSolver --> SortedSequence
+    end
+
+    subgraph Step 4: Polyline Geometry & Rendering ["🎨 Step 4: Polyline Geometry (Frontend Map)"]
+        SortedSequence --> PolylineCall["Fetch Turn-by-Turn GeoJSON Polylines"]
+        FinalPayload["Publish Structured JSON to Redis"]
+        PolylineCall --> FinalPayload
+        FinalPayload --> LeafletMap["Render Interactive Markers & Polylines on Leaflet/Mapbox"]
+    end
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 6: Frontend Real-Time State -->
+    <div id="frontend" class="tab-pane">
+        <div class="pane-header">
+            <div class="pane-title"><span class="badge">React UX</span> 6. Frontend Real-Time State & Map Visualization Flow</div>
+            <p class="pane-desc">This diagram maps out how the Next.js React frontend manages application state across live WebSocket messages, user UI interactions, and map updates without freezing the browser DOM.</p>
+        </div>
+        <div class="mermaid-wrapper">
+            <div class="mermaid">
+graph TD
+    subgraph External Events ["🔌 Incoming Network Streams"]
+        WS["WebSocket Stream (/ws/session)"]
+        HTTPResp["HTTP REST Responses"]
+    end
+
+    subgraph React State Layer ["⚛️ Next.js State Management (React Hooks / Context)"]
+        SyncStore["Session Store (Zustand / React Context)"]
+        AgentProgress["Agent Progress Map<br>{weather: 'completed', budget: 'progress'}"]
+        ItineraryState["Active Itinerary Data<br>(Days, Activities, Costs)"]
+        HITLLocal["Local HITL Controls<br>(Active Locks, Sliders, Dislikes)"]
+    end
+
+    subgraph UI Rendering Layer ["🖥️ UI Components & Map Visualization"]
+        ProgressBadges["Live Worker Status Badges & Loading Bars"]
+        DayCards["Day-by-Day Activity Cards<br>(With 👍/👎, 🔒 Lock, 🔄 Swap buttons)"]
+        BudgetCharts["Dynamic Budget Reallocation Sliders & Charts"]
+        MapContainer["Interactive Mapbox / Leaflet Component<br>(Markers, Tooltips, GeoJSON Polylines)"]
+    end
+
+    %% Event connections
+    WS -->|Dispatch Event Type| SyncStore
+    HTTPResp -->|Initial Load / Delta Apply| SyncStore
+
+    SyncStore --> AgentProgress
+    SyncStore --> ItineraryState
+    SyncStore --> HITLLocal
+
+    %% UI connections
+    AgentProgress --> ProgressBadges
+    ItineraryState --> DayCards
+    ItineraryState --> MapContainer
+    HITLLocal --> DayCards
+    HITLLocal --> BudgetCharts
+
+    %% User interaction loop
+    DayCards -->|Click Lock / Dislike / Swap| HTTPResp
+    BudgetCharts -->|Drag Slider & Apply| HTTPResp
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer>
+    <p>🎪 TBuddy / Ringmaster Round Table v2.0 - Designed for High-Impact Technical Interviews & Architecture Reviews</p>
+</footer>
+
+<script>
+    mermaid.initialize({ 
+        startOnLoad: true, 
+        theme: 'dark',
+        securityLevel: 'loose',
+        fontFamily: 'JetBrains Mono, monospace'
+    });
+
+    function switchTab(tabId) {
+        // Hide all panes
+        document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.classList.remove('active');
+        });
+        // Deactivate buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        // Show selected pane
+        document.getElementById(tabId).classList.add('active');
+        // Activate button
+        event.currentTarget.classList.add('active');
+    }
+</script>
+</body>
+</html>

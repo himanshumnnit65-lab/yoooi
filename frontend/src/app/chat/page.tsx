@@ -28,6 +28,7 @@ import {
   ChevronUp,
   BookOpen,
 } from "lucide-react";
+import { getAuthHeaders } from "@/lib/auth-context";
 
 // ── Leaflet map — dynamically imported (no SSR) because Leaflet needs window ──
 const TripMap = dynamic(() => import("@/components/TripMap"), { ssr: false });
@@ -517,7 +518,9 @@ const ItineraryCard = ({
     setSwappingActivityId(activityId);
     setLoadingSwapOptions(true);
     try {
-      const res = await fetch(`http://localhost:8010/api/v2/orchestrator/session/${sessionId}/swap-options?activity_id=${activityId}`);
+      const res = await fetch(`http://localhost:8010/api/v2/orchestrator/session/${sessionId}/swap-options?activity_id=${activityId}`, {
+        headers: getAuthHeaders()
+      });
       if (!res.ok) throw new Error("Failed to load options");
       const result = await res.json();
       setSwapAlternatives(result.alternatives || []);
@@ -535,7 +538,10 @@ const ItineraryCard = ({
     try {
       const res = await fetch(`http://localhost:8010/api/v2/orchestrator/session/${sessionId}/swap-apply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
         body: JSON.stringify({
           activity_id: activityId,
           selected_alternative: alternative
@@ -770,7 +776,10 @@ const TripChatPanel = ({ sessionId }: { sessionId: string | null }) => {
         `http://localhost:8010/api/v2/orchestrator/session/${sessionId}/chat`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            ...getAuthHeaders()
+          },
           body: JSON.stringify({ message: userMsg }),
         }
       );
@@ -962,7 +971,12 @@ const TravelChatPage = () => {
     return new Promise((resolve, reject) => {
       if (wsRef.current) wsRef.current.close();
 
-      const ws = new WebSocket(`ws://localhost:8010/api/v2/orchestrator/ws/${sid}`);
+      const token = typeof window !== "undefined" ? localStorage.getItem("google_id_token") : null;
+      const wsUrl = token
+        ? `ws://localhost:8010/api/v2/orchestrator/ws/${sid}?token=${encodeURIComponent(token)}`
+        : `ws://localhost:8010/api/v2/orchestrator/ws/${sid}`;
+
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => { setIsConnected(true); resolve(ws); };
 
@@ -1079,7 +1093,10 @@ const TravelChatPage = () => {
 
       const response = await fetch("http://localhost:8010/api/v2/orchestrator/plan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...getAuthHeaders()
+        },
         body: JSON.stringify({
           query: userInput,
           session_id: newSessionId,

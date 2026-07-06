@@ -1,0 +1,17 @@
+# Exclude virtual environments from Docker build context
+venv/
+.venv/
+env/
+
+# Exclude python cache files
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Exclude local configs and logs
+.git/
+.gitignore
+.DS_Store
+*.log
+*.sqlite

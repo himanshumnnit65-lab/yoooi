@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     # Google AI (Groq)
     groq_api_key: Optional[str] = None
 
+    # Google OAuth Client ID
+    google_client_id: Optional[str] = None
+
+
     # Weather API (OpenWeather)
     openweather_api_key: Optional[str] = None
 
